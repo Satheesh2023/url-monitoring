@@ -25,7 +25,7 @@ type Win = "24h" | "7d" | "30d";
 export default function TargetDetail() {
   const { id } = useParams();
   const [target, setTarget] = useState<Target | null>(null);
-  const [window, setWindow] = useState<Win>("24h");
+  const [timeWindow, setTimeWindow] = useState<Win>("24h");
   const [stats, setStats] = useState<Stats | null>(null);
   const [incidents, setIncidents] = useState<IncidentsRes | null>(null);
   const [series, setSeries] = useState<LatencySeries | null>(null);
@@ -46,8 +46,8 @@ export default function TargetDetail() {
       setErr(null);
       try {
         const [s, i, l] = await Promise.all([
-          getStats(targetId, window),
-          getIncidents(targetId, window),
+          getStats(targetId, timeWindow),
+          getIncidents(targetId, timeWindow),
           getLatencySeries(targetId),
         ]);
         if (!cancelled) {
@@ -65,7 +65,7 @@ export default function TargetDetail() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [id, window]);
+  }, [id, timeWindow]);
 
   if (!id) return null;
 
@@ -99,9 +99,9 @@ export default function TargetDetail() {
           <button
             key={w}
             type="button"
-            onClick={() => setWindow(w)}
+            onClick={() => setTimeWindow(w)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              window === w
+              timeWindow === w
                 ? "bg-emerald-600 text-white"
                 : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
             }`}
