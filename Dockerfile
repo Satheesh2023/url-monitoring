@@ -1,16 +1,24 @@
 FROM node:20-bookworm-slim AS build
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# Lockfile must be committed so CI/Docker match your machine.
+COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY web/package.json web/
 
-RUN npm install
+ENV NODE_OPTIONS=--max-old-space-size=4096
+# Prisma generate does not connect to MySQL; URL only needed if tooling validates env
+ENV DATABASE_URL=mysql://placeholder:placeholder@127.0.0.1:3306/placeholder
+
+RUN npm ci
 
 COPY server server
 COPY web web
 
 RUN npm run db:generate -w server
+# Work around npm optional-dependency resolution issue in some CI/container runs
+# where Rollup's linux binary package is skipped.
+RUN npm install --no-save @rollup/rollup-linux-x64-gnu
 RUN npm run build -w web
 RUN npm run build -w server
 
@@ -21,11 +29,11 @@ ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY web/package.json web/
 
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 COPY server/prisma ./server/prisma
 
