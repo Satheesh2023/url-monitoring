@@ -22,7 +22,7 @@ spec:
                 - until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done
           containers:
             - name: report
-              image: YOUR_DOCKERHUB_USER/url-monitoring:latest
+              image: YOUR_DOCKERHUB_USER/url-monitoring:xxxxx
               imagePullPolicy: IfNotPresent
               command:
                 - sh

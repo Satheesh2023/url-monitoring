@@ -13,6 +13,14 @@ npm -v
 echo "=== npm ci (requires package-lock.json committed) ==="
 npm ci
 
+if [[ "$(uname -s)" == "Linux" ]]; then
+  echo "=== Linux native optional deps (same as CI / Docker) ==="
+  npm install --no-save \
+    @rollup/rollup-linux-x64-gnu \
+    lightningcss-linux-x64-gnu \
+    @tailwindcss/oxide-linux-x64-gnu
+fi
+
 echo "=== Prisma generate ==="
 npm run db:generate -w server
 

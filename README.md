@@ -27,24 +27,24 @@ npm ci
 npm run db:generate -w server
 npm run build -w web
 npm run build -w server
-docker build --platform linux/amd64 -t YOUR_USER/url-monitoring:latest .
+docker build --platform linux/amd64 -t YOUR_USER/url-monitoring:local .
 ```
 
-### Preflight on GitHub
+### CI on GitHub
 
-Workflow **“Preflight — npm build (Linux)”** runs the same npm steps on `ubuntu-latest` with full logs. If preflight is green but **Docker build and push** is red, inspect Docker/buildx cache or build context.
+Workflow [**CI — npm build and Docker**](.github/workflows/ci.yml) runs `npm ci` → native Linux deps → Prisma → web + server build, then validates the `Dockerfile` with buildx. On `main`/`master` it also logs in and pushes the image. Failures in the npm steps surface in the same job log before Docker runs.
 
 ## Kubernetes
 
-Edit `k8s/01-mysql-secret.yaml`, replace `YOUR_DOCKERHUB_USER/url-monitoring:latest` in `03-app.yaml` and `04-cronjob-weekly.yaml`, then `kubectl apply -f k8s/`.
+Edit `k8s/01-mysql-secret.yaml`, set the app image in `03-app.yaml` and `04-cronjob-weekly.yaml` to `YOUR_DOCKERHUB_USER/url-monitoring:<5-char-prefix>` (CI pushes the **first 5 hex characters** of that commit’s SHA as the tag), then `kubectl apply -f k8s/`.
 
 ## CI: build and push (GitHub Actions)
 
-Workflow: [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 | Trigger | What happens |
 |--------|----------------|
-| Push to `main` / `master` | Builds image and pushes `…/url-monitoring:latest` and `…/url-monitoring:<full-sha>` |
+| Push to `main` / `master` | Builds image and pushes `…/url-monitoring:<first-5-of-sha>` (no `:latest`) |
 | Pull request | Builds only (validates `Dockerfile`; no push, no Docker Hub login needed on forks) |
 | **Actions → Run workflow** | Same as push (manual build + push) |
 
