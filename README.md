@@ -11,13 +11,21 @@ Node.js + TypeScript API and poller, React + Vite + Tailwind UI, MySQL (Prisma),
 ## Docker
 
 ```bash
-docker build -t YOUR_USER/health-monitor:latest .
+docker build -t YOUR_USER/url-monitoring:latest .
 ```
 
 ## Kubernetes
 
-Edit `k8s/01-mysql-secret.yaml`, image name in `03-app.yaml` / `04-cronjob-weekly.yaml`, then `kubectl apply -f k8s/`.
+Edit `k8s/01-mysql-secret.yaml`, replace `YOUR_DOCKERHUB_USER/url-monitoring:latest` in `03-app.yaml` and `04-cronjob-weekly.yaml`, then `kubectl apply -f k8s/`.
 
-## GitHub → Docker Hub
+## CI: build and push (GitHub Actions)
 
-Set secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` on the repo.
+Workflow: [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
+
+| Trigger | What happens |
+|--------|----------------|
+| Push to `main` / `master` | Builds image and pushes `…/url-monitoring:latest` and `…/url-monitoring:<full-sha>` |
+| Pull request | Builds only (validates `Dockerfile`; no push, no Docker Hub login needed on forks) |
+| **Actions → Run workflow** | Same as push (manual build + push) |
+
+**Repository secrets:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (Docker Hub [access token](https://hub.docker.com/settings/security)).

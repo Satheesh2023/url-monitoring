@@ -37,7 +37,7 @@ spec:
             - until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done
       containers:
         - name: app
-          image: YOUR_DOCKERHUB_USER/health-monitor:latest
+          image: YOUR_DOCKERHUB_USER/url-monitoring:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
