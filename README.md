@@ -10,9 +10,29 @@ Node.js + TypeScript API and poller, React + Vite + Tailwind UI, MySQL (Prisma),
 
 ## Docker
 
+**Commit `package-lock.json`** — the `Dockerfile` uses `npm ci` and will fail if the lockfile is missing or out of sync with `package.json`.
+
+### Verify locally (same steps as the image build)
+
 ```bash
-docker build -t YOUR_USER/url-monitoring:latest .
+bash scripts/verify-build.sh
 ```
+
+That runs `npm ci` → Prisma generate → web + server build, then (if `docker` exists) `docker build --platform linux/amd64` so you match **GitHub Actions** (even on Apple Silicon).
+
+Manual:
+
+```bash
+npm ci
+npm run db:generate -w server
+npm run build -w web
+npm run build -w server
+docker build --platform linux/amd64 -t YOUR_USER/url-monitoring:latest .
+```
+
+### Preflight on GitHub
+
+Workflow **“Preflight — npm build (Linux)”** runs the same npm steps on `ubuntu-latest` with full logs. If preflight is green but **Docker build and push** is red, inspect Docker/buildx cache or build context.
 
 ## Kubernetes
 

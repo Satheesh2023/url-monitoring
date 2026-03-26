@@ -1,0 +1,40 @@
+# Same install + build as the Docker image build stage, on ubuntu-latest.
+# If this passes but Docker fails, the problem is Docker-specific (cache, context, platform).
+# If this fails, open the job log — the real error is printed here (not hidden in buildx).
+
+name: Preflight — npm build (Linux)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Prisma generate
+        run: npm run db:generate -w server
+        env:
+          # generate does not need a real DB; satisfy schema parse if required
+          DATABASE_URL: mysql://placeholder:placeholder@127.0.0.1:3306/placeholder
+
+      - name: Build web
+        run: npm run build -w web
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Build server
+        run: npm run build -w server

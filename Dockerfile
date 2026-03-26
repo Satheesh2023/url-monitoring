@@ -17,8 +17,11 @@ COPY web web
 
 RUN npm run db:generate -w server
 # Work around npm optional-dependency resolution issue in some CI/container runs
-# where Rollup's linux binary package is skipped.
-RUN npm install --no-save @rollup/rollup-linux-x64-gnu
+# where native Linux optional packages are skipped.
+RUN npm install --no-save \
+  @rollup/rollup-linux-x64-gnu \
+  lightningcss-linux-x64-gnu \
+  @tailwindcss/oxide-linux-x64-gnu
 RUN npm run build -w web
 RUN npm run build -w server
 
