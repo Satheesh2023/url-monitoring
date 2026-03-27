@@ -2,7 +2,7 @@
 
 Manifests for running the **url-monitoring** image on EKS behind an **AWS ALB**, with **Amazon Aurora MySQL** as the database (no in-cluster MySQL).
 
-Default image in these manifests: **`satheesh2023/url-monitoring:e6cf1`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
+Default image in these manifests: **`satheesh2023/url-monitoring:7b21a`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
 
 **Slack channel:** Most org webhooks post only to the channel picked when the webhook was created — you do not set the channel in Kubernetes. Optionally set **`SLACK_CHANNEL`** in `secret-app.yaml` (e.g. `#uptime-alerts`) if your Slack setup allows [channel override](https://api.slack.com/messaging/webhooks); otherwise leave it empty or omit the key.
 
@@ -25,7 +25,23 @@ Default image in these manifests: **`satheesh2023/url-monitoring:e6cf1`** (chang
 
 `mysql://USER:PASSWORD@your-aurora-cluster.cluster-xxxxx.us-east-1.rds.amazonaws.com:3306/yourdbname`
 
-## 2. Apply
+## 2. Database migrations (required)
+
+The **Deployment** runs only `node dist/index.js` so **two replicas never run `prisma migrate deploy` at the same time** (that race often causes `CrashLoopBackOff` and ALB **503** “no healthy backend”).
+
+**First install or after pulling migrations:**
+
+```bash
+cd eks-deploy
+# Use the same image tag as in kustomization.yaml / deployment.yaml
+kubectl delete job url-monitoring-db-migrate -n url-monitoring --ignore-not-found
+kubectl apply -f job-db-migrate.yaml
+kubectl wait --for=condition=complete job/url-monitoring-db-migrate -n url-monitoring --timeout=300s
+```
+
+If the Job fails, fix `DATABASE_URL` / network to Aurora, then delete the Job and apply again.
+
+## 3. Apply
 
 ```bash
 cd eks-deploy
@@ -36,7 +52,7 @@ kubectl apply -f secret-app.yaml
 kubectl apply -k .
 ```
 
-## 3. DNS
+## 4. DNS
 
 After the Ingress is ready:
 
@@ -46,16 +62,16 @@ kubectl get ingress -n url-monitoring
 
 Point your DNS **CNAME** (or Alias **A/ALIAS** for Route 53) to the **ALB hostname** shown in the Ingress status.
 
-## 4. Notes
+## 5. Notes
 
-- The container image runs **`prisma migrate deploy`** on startup, then the server (see `Dockerfile` `CMD`). Ensure Aurora credentials and network allow this on first boot.
+- **EKS:** Pods run **`node` only**; run **`job-db-migrate.yaml`** for schema updates (see §2). The **Dockerfile** `CMD` still runs migrate + node for simple local `docker run`.
 - Health checks use **`/api/health`** (matches app probes and ALB health check).
 - Weekly report CronJob uses the same image and `DATABASE_URL`; schedule is **UTC** (`0 9 * * 1` = Monday 09:00 UTC).
 
-## HTTP-only (no ACM yet)
+## 6. HTTP-only (no ACM yet)
 
 For a quick test, strip these annotations from `ingress.yaml`: `listen-ports`, `ssl-redirect`, `certificate-arn`. Use a single listener, e.g. `alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'`.
 
-## Secrets and git
+## 7. Secrets and git
 
 `secret-app.yaml` (copied from the example) is listed in the repo `.gitignore` so it is not committed by mistake.

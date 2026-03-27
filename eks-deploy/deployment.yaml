@@ -1,4 +1,5 @@
-# 2 pods, image CMD = prisma migrate + node (Dockerfile). Secret app-secret required.
+# 2 pods — container runs `node dist/index.js` only (see command:). Run job-db-migrate.yaml for schema.
+# Dockerfile CMD still includes migrate for local docker; EKS overrides command here. Secret app-secret required.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,8 +25,12 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:3ee3f
+          image: satheesh2023/url-monitoring:7b21a
           imagePullPolicy: IfNotPresent
+          # Do not run prisma migrate here: 2 replicas would race and one pod can exit 1 → CrashLoop.
+          # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
+          workingDir: /app/server
+          command: ["node", "dist/index.js"]
           ports:
             - name: http
               containerPort: 3000
@@ -33,7 +38,7 @@ spec:
             - name: NODE_ENV
               value: production
             - name: NODE_OPTIONS
-              value: "--max-old-space-size=2560"
+              value: "--max-old-space-size=768"
             - name: PORT
               value: "3000"
             - name: DATABASE_URL
@@ -66,7 +71,8 @@ spec:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 10
+            # Give Node + first Prisma tick time on small CPU; refused = process not listening yet or exited
+            initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 60
@@ -87,7 +93,7 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 1536Mi
+              memory: 512Mi
             limits:
               cpu: "2"
-              memory: 3Gi
+              memory: 1Gi
