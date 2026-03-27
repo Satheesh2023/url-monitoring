@@ -9,6 +9,24 @@ function mergeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
   return a;
 }
 
+function userFacingNetworkError(e: unknown, timedOut: boolean): Error {
+  if (timedOut) {
+    return new Error(
+      `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s — the API or database may be slow or unavailable.`
+    );
+  }
+  if (e instanceof Error) {
+    const m = e.message;
+    if (/signal.*timed out|TimeoutError|timed out|aborted due to timeout/i.test(m)) {
+      return new Error(
+        `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s — the API or database may be slow or unavailable.`
+      );
+    }
+    return e;
+  }
+  return new Error(String(e));
+}
+
 function formatHttpError(status: number, body: string): string {
   const b = body.trim();
   if (
@@ -44,17 +62,14 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
         e instanceof Error &&
         (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"));
       if (aborted) {
-        lastErr =
-          timeoutSignal.aborted && !(init?.signal?.aborted ?? false)
-            ? `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`
-            : "Request aborted";
+        const timedOut = timeoutSignal.aborted && !(init?.signal?.aborted ?? false);
         if (attempt < maxAttempts && isIdempotent) {
           await new Promise((r) => setTimeout(r, 300 * attempt));
           continue;
         }
-        throw new Error(lastErr);
+        throw userFacingNetworkError(e, timedOut);
       }
-      throw e;
+      throw userFacingNetworkError(e, false);
     }
 
     if (res.ok) {
@@ -110,8 +125,16 @@ export type Target = {
   latest: Check | null;
 };
 
-export function listTargets() {
-  return j<Target[]>("/api/targets");
+export type ListTargetsResult = { targets: Target[]; partialLatest: boolean };
+
+export async function listTargets(): Promise<ListTargetsResult> {
+  const raw = await j<unknown>("/api/targets");
+  if (Array.isArray(raw)) {
+    return { targets: raw as Target[], partialLatest: false };
+  }
+  const o = raw as { targets?: unknown; partialLatest?: boolean };
+  const targets = Array.isArray(o.targets) ? (o.targets as Target[]) : [];
+  return { targets, partialLatest: o.partialLatest === true };
 }
 
 export function createTarget(body: Record<string, unknown>) {

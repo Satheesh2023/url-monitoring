@@ -1,11 +1,11 @@
 # URL monitoring
 
-Node.js + TypeScript API and poller, React + Vite + Tailwind UI, MySQL (Prisma), Slack alerts, Docker image, Kubernetes manifests (MySQL pod + app + weekly CronJob).
+Node.js + TypeScript API and poller, React + Vite + Tailwind UI, MySQL via **mysql2** (raw SQL, no Prisma), Slack alerts, Docker image, and **EKS** manifests under [`eks-deploy/`](eks-deploy/) (Aurora MySQL, not in-cluster DB).
 
 ## Quick start (local)
 
 1. MySQL running; set `DATABASE_URL` in `.env` (see `.env.example`).
-2. `npm install` → `npm run db:generate -w server` → `npm run db:migrate -w server`
+2. `npm install` → `npm run db:migrate -w server` (applies `server/sql/migrations/*.sql` once per file)
 3. `npm run dev -w server` and `npm run dev -w web` → UI at http://localhost:5173
 
 ## Docker
@@ -18,13 +18,12 @@ Node.js + TypeScript API and poller, React + Vite + Tailwind UI, MySQL (Prisma),
 bash scripts/verify-build.sh
 ```
 
-That runs `npm ci` → Prisma generate → web + server build, then (if `docker` exists) `docker build --platform linux/amd64` so you match **GitHub Actions** (even on Apple Silicon).
+That runs `npm ci` → web + server build, then (if `docker` exists) `docker build --platform linux/amd64` so you match **GitHub Actions** (even on Apple Silicon).
 
 Manual:
 
 ```bash
 npm ci
-npm run db:generate -w server
 npm run build -w web
 npm run build -w server
 docker build --platform linux/amd64 -t YOUR_USER/url-monitoring:local .
@@ -32,11 +31,11 @@ docker build --platform linux/amd64 -t YOUR_USER/url-monitoring:local .
 
 ### CI on GitHub
 
-Workflow [**CI — npm build and Docker**](.github/workflows/ci.yml) runs `npm ci` → native Linux deps → Prisma → web + server build, then validates the `Dockerfile` with buildx. On `main`/`master` it also logs in and pushes the image. Failures in the npm steps surface in the same job log before Docker runs.
+Workflow [**CI — npm build and Docker**](.github/workflows/ci.yml) runs `npm ci` → native Linux deps → web + server build, then validates the `Dockerfile` with buildx. On `main`/`master` it also logs in and pushes the image. Failures in the npm steps surface in the same job log before Docker runs.
 
-## Kubernetes
+## Kubernetes (EKS)
 
-Edit `k8s/01-mysql-secret.yaml`, set the app image in `03-app.yaml` and `04-cronjob-weekly.yaml` to `YOUR_DOCKERHUB_USER/url-monitoring:<5-char-prefix>` (CI pushes the **first 5 hex characters** of that commit’s SHA as the tag), then `kubectl apply -f k8s/`.
+See [`eks-deploy/README.md`](eks-deploy/README.md): create `app-secret`, set the image tag in `kustomization.yaml` / `deployment.yaml` (CI pushes `…/url-monitoring:<first-5-of-sha>`), then `kubectl apply -k eks-deploy/`.
 
 ## CI: build and push (GitHub Actions)
 

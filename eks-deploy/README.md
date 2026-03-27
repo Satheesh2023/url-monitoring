@@ -2,7 +2,7 @@
 
 Manifests for running the **url-monitoring** image on EKS behind an **AWS ALB**, with **Amazon Aurora MySQL** as the database (no in-cluster MySQL).
 
-Default image in these manifests: **`satheesh2023/url-monitoring:bb88d`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
+Default image in these manifests: **`satheesh2023/url-monitoring:ea0b9`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
 
 **Slack channel:** Most org webhooks post only to the channel picked when the webhook was created — you do not set the channel in Kubernetes. Optionally set **`SLACK_CHANNEL`** in `secret-app.yaml` (e.g. `#uptime-alerts`) if your Slack setup allows [channel override](https://api.slack.com/messaging/webhooks); otherwise leave it empty or omit the key.
 
@@ -27,7 +27,7 @@ Default image in these manifests: **`satheesh2023/url-monitoring:bb88d`** (chang
 
 ## 2. Database migrations (required)
 
-The **Deployment** runs only `node dist/index.js` so **two replicas never run `prisma migrate deploy` at the same time** (that race often causes `CrashLoopBackOff` and ALB **503** “no healthy backend”).
+The **Deployment** runs only `node dist/index.js` so **two replicas never run DB migrations at the same time** (that race often causes `CrashLoopBackOff` and ALB **503** “no healthy backend”). Schema changes are applied with the **Job** below (`node dist/scripts/migrate.js` → `server/sql/migrations/*.sql`).
 
 **First install or after pulling migrations:**
 

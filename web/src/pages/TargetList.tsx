@@ -36,14 +36,17 @@ export default function TargetList() {
   const [err, setErr] = useState<string | null>(null);
   /** True when a refresh failed but we still show the last successful list */
   const [stale, setStale] = useState(false);
+  /** Last successful response: API returned targets but latest-check query failed (DB issue). */
+  const [partialLatest, setPartialLatest] = useState(false);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
 
   async function refresh() {
     try {
-      const data = await listTargets();
+      const { targets: data, partialLatest: partial } = await listTargets();
       setTargets(data);
       writeCachedTargets(data);
+      setPartialLatest(partial);
       setErr(null);
       setStale(false);
     } catch (e) {
@@ -125,8 +128,31 @@ export default function TargetList() {
 
       {stale && targets.length > 0 && (
         <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-          Showing last loaded data — API was temporarily unreachable. Auto-refresh every 5s until it
-          recovers.
+          <p className="font-medium text-amber-50">Cached list — live refresh failed</p>
+          <p className="mt-1 text-amber-100/90">
+            Up / Down below is from the last successful load and may be wrong. Retrying every 5s.
+          </p>
+        </div>
+      )}
+
+      {stale && targets.length === 0 && !loading && (
+        <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+          <p className="font-medium text-amber-50">Could not load targets</p>
+          <p className="mt-1 text-amber-100/90">
+            The API did not respond in time or returned an error. Retrying every 5s.
+          </p>
+        </div>
+      )}
+
+      {!stale && partialLatest && (
+        <div className="rounded-lg border border-sky-800/60 bg-sky-950/30 px-3 py-2 text-sm text-sky-100">
+          <p className="font-medium text-sky-50">Latest check data unavailable</p>
+          <p className="mt-1 text-sky-100/90">
+            Targets loaded, but the database could not return probe results (e.g. Aurora{" "}
+            <code className="rounded bg-sky-950 px-1 text-xs">/rdsdbdata/tmp</code> full or DB
+            overload). Status shows <span className="font-medium">No data</span> until the DB
+            recovers. Retrying every 5s.
+          </p>
         </div>
       )}
 
@@ -154,19 +180,46 @@ export default function TargetList() {
             <tbody className="divide-y divide-zinc-800 bg-zinc-950/40">
               {targets.map((t) => {
                 const ok = t.latest?.ok;
-                const badge =
+                const baseBadge =
                   ok === undefined
-                    ? { label: "No data", cls: "bg-zinc-700 text-zinc-200" }
+                    ? {
+                        label: "No data",
+                        dot: "bg-zinc-500",
+                        cls: "border border-zinc-600 bg-zinc-800/80 text-zinc-100",
+                      }
                     : ok
-                      ? { label: "Up", cls: "bg-emerald-500/20 text-emerald-300" }
-                      : { label: "Down", cls: "bg-red-500/20 text-red-300" };
+                      ? {
+                          label: "Up",
+                          dot: "bg-emerald-400",
+                          cls: "border border-emerald-600/50 bg-emerald-500/15 text-emerald-200",
+                        }
+                      : {
+                          label: "Down",
+                          dot: "bg-red-400",
+                          cls: "border border-red-600/50 bg-red-500/15 text-red-200",
+                        };
+                const suffix = stale ? " · cached" : "";
                 return (
                   <tr key={t.id} className="hover:bg-zinc-900/50">
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.cls}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${baseBadge.cls}`}
+                        title={
+                          stale
+                            ? "From last successful refresh; may be outdated"
+                            : partialLatest && t.latest == null
+                              ? "Database did not return latest check row"
+                              : undefined
+                        }
                       >
-                        {badge.label}
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${baseBadge.dot}`}
+                          aria-hidden
+                        />
+                        {baseBadge.label}
+                        {suffix && (
+                          <span className="font-normal text-zinc-400">{suffix}</span>
+                        )}
                       </span>
                     </td>
                     <td className="px-4 py-3">

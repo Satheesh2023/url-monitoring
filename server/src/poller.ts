@@ -1,5 +1,6 @@
 import PQueue from "p-queue";
-import { prisma } from "./db.js";
+import { insertCheck } from "./repo/checks.js";
+import { listEnabledTargets } from "./repo/targets.js";
 import { postSlackTransition } from "./slack.js";
 
 function readBodyMaxBytes(): number {
@@ -95,16 +96,14 @@ async function runOneCheck(t: TargetRow): Promise<void> {
   const checkedAt = new Date();
 
   try {
-    await prisma.check.create({
-      data: {
-        targetId: t.id,
-        checkedAt,
-        ok,
-        httpStatus,
-        responseTimeMs,
-        errorMessage,
-        bodySnippet,
-      },
+    await insertCheck({
+      targetId: t.id,
+      checkedAt,
+      ok,
+      httpStatus,
+      responseTimeMs,
+      errorMessage,
+      bodySnippet,
     });
     await maybeAlertSlack(t, ok, checkedAt, responseTimeMs, errorMessage, httpStatus);
   } catch (e) {
@@ -204,7 +203,7 @@ async function maybeAlertSlack(
 export function startPoller(globalPollTickMs = 1000): () => void {
   const tick = async () => {
     try {
-      const targets = await prisma.target.findMany({ where: { enabled: true } });
+      const targets = await listEnabledTargets();
       const now = Date.now();
       for (const t of targets) {
         const last = lastRunAt.get(t.id) ?? 0;

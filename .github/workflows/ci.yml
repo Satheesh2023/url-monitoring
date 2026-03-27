@@ -6,7 +6,7 @@
 #   DOCKERHUB_USERNAME or DOCKER_USERNAME
 #
 # Image tag: first 5 hex chars of the commit SHA (no :latest).
-# Set the same image in k8s/03-app.yaml and k8s/04-cronjob-weekly.yaml.
+# Set the same image tag in eks-deploy/ (kustomization.yaml / deployment.yaml / cronjob / migrate job).
 
 name: CI — npm build and Docker
 
@@ -49,11 +49,6 @@ jobs:
             @rollup/rollup-linux-x64-gnu \
             lightningcss-linux-x64-gnu \
             @tailwindcss/oxide-linux-x64-gnu
-
-      - name: Prisma generate
-        run: npm run db:generate -w server
-        env:
-          DATABASE_URL: mysql://placeholder:placeholder@127.0.0.1:3306/placeholder
 
       - name: Build web
         run: npm run build -w web

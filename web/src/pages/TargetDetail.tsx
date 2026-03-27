@@ -34,7 +34,7 @@ export default function TargetDetail() {
   useEffect(() => {
     if (!id) return;
     void listTargets()
-      .then((all) => setTarget(all.find((t) => t.id === id) ?? null))
+      .then((r) => setTarget(r.targets.find((t) => t.id === id) ?? null))
       .catch(() => setTarget(null));
   }, [id]);
 

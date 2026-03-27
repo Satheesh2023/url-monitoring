@@ -21,9 +21,6 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     @tailwindcss/oxide-linux-x64-gnu
 fi
 
-echo "=== Prisma generate ==="
-npm run db:generate -w server
-
 echo "=== Web (Vite) ==="
 npm run build -w web
 

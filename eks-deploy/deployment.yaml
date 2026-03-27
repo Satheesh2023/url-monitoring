@@ -37,9 +37,9 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:bb88d
+          image: satheesh2023/url-monitoring:ea0b9
           imagePullPolicy: IfNotPresent
-          # Do not run prisma migrate here: 2 replicas would race and one pod can exit 1 → CrashLoop.
+          # Do not run DB migrations here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
           workingDir: /app/server
           command: ["node", "dist/index.js"]
@@ -49,7 +49,7 @@ spec:
           env:
             - name: NODE_ENV
               value: production
-            # 2Gi limit: leave ~500Mi+ for Prisma engine, TLS, buffers beyond V8 heap.
+            # 2Gi limit: leave headroom for TLS, mysql2 pool, buffers beyond V8 heap.
             - name: NODE_OPTIONS
               value: "--max-old-space-size=1536"
             - name: PORT
@@ -89,7 +89,7 @@ spec:
             httpGet:
               path: /api/health
               port: http
-            # Give Node + first Prisma tick time on small CPU; refused = process not listening yet or exited
+            # Give Node + poller start delay time on small CPU; refused = process not listening yet or exited
             initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 5
@@ -114,5 +114,5 @@ spec:
               memory: 1Gi
             limits:
               cpu: "2"
-              # 1Gi still OOM’d under load (Prisma + large stats windows). 2Gi matches observed ~1.5–1.9Gi peaks.
+              # 1Gi still OOM’d under load (large stats windows). 2Gi matches observed ~1.5–1.9Gi peaks.
               memory: 2Gi

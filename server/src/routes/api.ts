@@ -1,13 +1,21 @@
-import type { Target } from "@prisma/client";
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
+import { isDbDriverError } from "../db-errors.js";
+import { fetchChecksBudgetedIncidents, fetchChecksBudgetedStats } from "../check-query.js";
 import {
-  fetchChecksBudgetedIncidents,
-  fetchChecksBudgetedStats,
-  selectCheckLatest,
-  type LatestCheckRow,
-} from "../check-query.js";
-import { prisma } from "../db.js";
+  countChecksForTarget,
+  findLatestCheckPerTarget,
+  listChecksPage,
+} from "../repo/checks.js";
+import {
+  createTarget,
+  deleteTarget,
+  findTargetById,
+  listTargetsOrderByCreated,
+  targetExists,
+  updateTarget,
+} from "../repo/targets.js";
+import type { LatestCheckRow, Target } from "../types.js";
 import {
   buildIncidentList,
   computeUptimeAndIncidents,
@@ -72,45 +80,33 @@ function parseWindow(q: unknown): WindowKey {
   return "24h";
 }
 
-function isPrismaClientError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const name = Object.getPrototypeOf(err)?.constructor?.name ?? "";
-  return (
-    name === "PrismaClientKnownRequestError" ||
-    name === "PrismaClientUnknownRequestError" ||
-    name === "PrismaClientRustPanicError" ||
-    name === "PrismaClientInitializationError"
-  );
-}
-
 export function registerApi(app: Express): void {
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
 
   app.get("/api/targets", asyncRoute(async (_req, res) => {
-    const targets = await prisma.target.findMany({ orderBy: { createdAt: "asc" } });
+    const targets = await listTargetsOrderByCreated();
     const ids = targets.map((t) => t.id);
     let latest: LatestCheckRow[] = [];
+    let latestQueryFailed = false;
     if (ids.length > 0) {
       try {
-        latest = (await prisma.check.findMany({
-          where: { targetId: { in: ids } },
-          orderBy: [{ targetId: "asc" }, { checkedAt: "desc" }],
-          distinct: ["targetId"],
-          select: selectCheckLatest,
-        })) as LatestCheckRow[];
+        latest = await findLatestCheckPerTarget(ids);
       } catch (e) {
+        latestQueryFailed = true;
         console.error("[api] /api/targets latest checks query failed", e);
       }
     }
     const byId = new Map<string, LatestCheckRow>(latest.map((c) => [c.targetId, c]));
-    res.json(
-      targets.map((t: Target) => ({
+    res.json({
+      targets: targets.map((t: Target) => ({
         ...t,
         latest: byId.get(t.id) ?? null,
-      }))
-    );
+      })),
+      /** True when the latest-check query failed (DB tmp full, pool timeout, etc.). */
+      partialLatest: latestQueryFailed,
+    });
   }));
 
   app.post("/api/targets", asyncRoute(async (req, res) => {
@@ -119,13 +115,13 @@ export function registerApi(app: Express): void {
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const t = await prisma.target.create({ data: parsed.data });
+    const t = await createTarget(parsed.data);
     res.status(201).json(t);
   }));
 
   app.get("/api/targets/:id", asyncRoute(async (req, res) => {
     const id = paramId(req);
-    const t = await prisma.target.findUnique({ where: { id } });
+    const t = await findTargetById(id);
     if (!t) {
       res.status(404).json({ error: "not found" });
       return;
@@ -140,22 +136,22 @@ export function registerApi(app: Express): void {
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    try {
-      const t = await prisma.target.update({ where: { id }, data: parsed.data });
-      res.json(t);
-    } catch {
+    const t = await updateTarget(id, parsed.data);
+    if (!t) {
       res.status(404).json({ error: "not found" });
+      return;
     }
+    res.json(t);
   }));
 
   app.delete("/api/targets/:id", asyncRoute(async (req, res) => {
     const id = paramId(req);
-    try {
-      await prisma.target.delete({ where: { id } });
-      res.status(204).send();
-    } catch {
+    const ok = await deleteTarget(id);
+    if (!ok) {
       res.status(404).json({ error: "not found" });
+      return;
     }
+    res.status(204).send();
   }));
 
   app.get("/api/targets/:id/checks", asyncRoute(async (req, res) => {
@@ -163,27 +159,22 @@ export function registerApi(app: Express): void {
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
     const skip = (page - 1) * limit;
-    const exists = await prisma.target.findUnique({ where: { id: targetId }, select: { id: true } });
+    const exists = await targetExists(targetId);
     if (!exists) {
       res.status(404).json({ error: "not found" });
       return;
     }
 
     const [items, total] = await Promise.all([
-      prisma.check.findMany({
-        where: { targetId },
-        orderBy: { checkedAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      prisma.check.count({ where: { targetId } }),
+      listChecksPage(targetId, skip, limit),
+      countChecksForTarget(targetId),
     ]);
     res.json({ items, page, limit, total });
   }));
 
   app.get("/api/targets/:id/stats", asyncRoute(async (req, res) => {
     const targetId = paramId(req);
-    const exists = await prisma.target.findUnique({ where: { id: targetId } });
+    const exists = await findTargetById(targetId);
     if (!exists) {
       res.status(404).json({ error: "not found" });
       return;
@@ -227,8 +218,8 @@ export function registerApi(app: Express): void {
 
   app.get("/api/targets/:id/incidents", asyncRoute(async (req, res) => {
     const targetId = paramId(req);
-    const exists = await prisma.target.findUnique({ where: { id: targetId }, select: { id: true } });
-    if (!exists) {
+    const existsInc = await targetExists(targetId);
+    if (!existsInc) {
       res.status(404).json({ error: "not found" });
       return;
     }
@@ -244,8 +235,8 @@ export function registerApi(app: Express): void {
 
   app.get("/api/targets/:id/latency-series", asyncRoute(async (req, res) => {
     const targetId = paramId(req);
-    const exists = await prisma.target.findUnique({ where: { id: targetId }, select: { id: true } });
-    if (!exists) {
+    const existsLat = await targetExists(targetId);
+    if (!existsLat) {
       res.status(404).json({ error: "not found" });
       return;
     }
@@ -265,7 +256,7 @@ export function registerApi(app: Express): void {
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error("[api] error", err instanceof Error ? err.stack || err.message : err);
     if (res.headersSent) return;
-    if (isPrismaClientError(err)) {
+    if (isDbDriverError(err)) {
       res.status(503).json({ error: "Database temporarily unavailable" });
       return;
     }

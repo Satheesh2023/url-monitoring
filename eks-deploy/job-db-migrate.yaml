@@ -1,4 +1,4 @@
-# Run once before (or right after) deploying a new image when Prisma migrations changed.
+# Run once before (or right after) deploying a new image when sql/migrations changed.
 # Not part of default kustomization — Job spec is immutable on re-apply; delete old Job first.
 #
 #   kubectl delete job url-monitoring-db-migrate -n url-monitoring --ignore-not-found
@@ -23,10 +23,10 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migrate
-          image: satheesh2023/url-monitoring:bb88d
+          image: satheesh2023/url-monitoring:ea0b9
           imagePullPolicy: IfNotPresent
           workingDir: /app/server
-          command: ["npx", "prisma", "migrate", "deploy"]
+          command: ["node", "dist/scripts/migrate.js"]
           env:
             - name: DATABASE_URL
               valueFrom:

@@ -1,14 +1,16 @@
 import "dotenv/config";
 import { fetchChecksBudgetedStats } from "../check-query.js";
-import { prisma } from "../db.js";
+import { pool } from "../db.js";
+import { listTargetsOrderByCreated } from "../repo/targets.js";
 import { computeUptimeAndIncidents, percentile, windowBounds } from "../stats.js";
 import { postSlackWeeklyReport } from "../slack.js";
+import type { Target } from "../types.js";
 
 async function main() {
   const { start, end } = windowBounds("7d");
-  let targets;
+  let targets: Target[];
   try {
-    targets = await prisma.target.findMany({ orderBy: { createdAt: "asc" } });
+    targets = await listTargetsOrderByCreated();
   } catch (e) {
     console.error("[weekly-report] failed to load targets", e);
     process.exit(1);
@@ -56,7 +58,7 @@ async function main() {
     process.exit(1);
     return;
   }
-  await prisma.$disconnect();
+  await pool.end();
 }
 
 main().catch((e) => {

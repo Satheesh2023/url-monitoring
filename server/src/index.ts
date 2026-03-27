@@ -3,7 +3,7 @@ import cors from "cors";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { prisma } from "./db.js";
+import { pool } from "./db.js";
 import { registerApi } from "./routes/api.js";
 import { startPoller } from "./poller.js";
 
@@ -78,8 +78,8 @@ function shutdown(signal: string) {
   }
   stopPoller?.();
   server.close(() => {
-    void prisma
-      .$disconnect()
+    void pool
+      .end()
       .catch(() => {})
       .finally(() => process.exit(0));
   });
