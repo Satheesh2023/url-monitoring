@@ -2,7 +2,7 @@
 
 Manifests for running the **url-monitoring** image on EKS behind an **AWS ALB**, with **Amazon Aurora MySQL** as the database (no in-cluster MySQL).
 
-Default image in these manifests: **`satheesh2023/url-monitoring:7b21a`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
+Default image in these manifests: **`satheesh2023/url-monitoring:35e69`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
 
 **Slack channel:** Most org webhooks post only to the channel picked when the webhook was created — you do not set the channel in Kubernetes. Optionally set **`SLACK_CHANNEL`** in `secret-app.yaml` (e.g. `#uptime-alerts`) if your Slack setup allows [channel override](https://api.slack.com/messaging/webhooks); otherwise leave it empty or omit the key.
 

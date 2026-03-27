@@ -23,9 +23,21 @@ spec:
         app: url-monitoring
     spec:
       terminationGracePeriodSeconds: 45
+      # Prefer different nodes so two replicas don’t fight one node’s RAM.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["url-monitoring"]
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:7b21a
+          image: satheesh2023/url-monitoring:35e69
           imagePullPolicy: IfNotPresent
           # Do not run prisma migrate here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
@@ -37,8 +49,9 @@ spec:
           env:
             - name: NODE_ENV
               value: production
+            # Heap below 3Gi limit — leave headroom for native (Prisma, TLS, buffers).
             - name: NODE_OPTIONS
-              value: "--max-old-space-size=768"
+              value: "--max-old-space-size=2560"
             - name: PORT
               value: "3000"
             - name: DATABASE_URL
@@ -93,7 +106,7 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 512Mi
+              memory: 2Gi
             limits:
               cpu: "2"
-              memory: 1Gi
+              memory: 3Gi
