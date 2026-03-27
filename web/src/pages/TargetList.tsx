@@ -2,24 +2,48 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createTarget, deleteTarget, listTargets, type Target } from "../api";
 
+const TARGETS_CACHE_KEY = "hm-targets-list-v1";
+
+function readCachedTargets(): Target[] {
+  try {
+    const raw = sessionStorage.getItem(TARGETS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Target[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedTargets(data: Target[]) {
+  try {
+    sessionStorage.setItem(TARGETS_CACHE_KEY, JSON.stringify(data));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 function formatTime(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString();
 }
 
 export default function TargetList() {
-  const [targets, setTargets] = useState<Target[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = readCachedTargets();
+  const [targets, setTargets] = useState<Target[]>(cached);
+  /** Only block the table on first load when we have nothing to show yet */
+  const [loading, setLoading] = useState(cached.length === 0);
   const [err, setErr] = useState<string | null>(null);
   /** True when a refresh failed but we still show the last successful list */
   const [stale, setStale] = useState(false);
-  const [url, setUrl] = useState("https://example.com");
+  const [url, setUrl] = useState("");
   const [name, setName] = useState("");
 
   async function refresh() {
     try {
       const data = await listTargets();
       setTargets(data);
+      writeCachedTargets(data);
       setErr(null);
       setStale(false);
     } catch (e) {
@@ -78,6 +102,7 @@ export default function TargetList() {
             className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none ring-emerald-500/40 focus:ring-2"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://api.example/health"
             required
           />
         </div>
@@ -111,7 +136,7 @@ export default function TargetList() {
         </div>
       )}
 
-      {loading ? (
+      {loading && targets.length === 0 ? (
         <p className="text-zinc-500">Loading…</p>
       ) : (
         <div className="overflow-hidden rounded-xl border border-zinc-800">

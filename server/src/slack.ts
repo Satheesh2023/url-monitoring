@@ -47,14 +47,21 @@ export async function postSlackTransition(payload: {
     lines.push(`Response: ${payload.responseTimeMs} ms`);
   }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(webhookBody(lines.join("\n"))),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(webhookBody(lines.join("\n"))),
+    });
+  } catch (e) {
+    console.error("[slack] webhook network error", e);
+    throw e;
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     console.error("[slack] webhook failed", res.status, body);
+    throw new Error(`Slack webhook HTTP ${res.status}`);
   }
 }
 
@@ -67,13 +74,20 @@ export async function postSlackWeeklyReport(text: string): Promise<void> {
     }
     return;
   }
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(webhookBody(text)),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(webhookBody(text)),
+    });
+  } catch (e) {
+    console.error("[slack] weekly webhook network error", e);
+    throw e;
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     console.error("[slack] weekly webhook failed", res.status, body);
+    throw new Error(`Slack weekly webhook HTTP ${res.status}`);
   }
 }

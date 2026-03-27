@@ -1,5 +1,14 @@
 const base = "";
 
+/** Prevents indefinite "Loading…" when the browser fetch never completes (ALB / network hang). */
+const FETCH_TIMEOUT_MS = 25_000;
+
+function mergeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
+  if (!b) return a;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([a, b]);
+  return a;
+}
+
 function formatHttpError(status: number, body: string): string {
   const b = body.trim();
   if (
@@ -20,10 +29,33 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
 
   let lastErr = "Request failed";
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const res = await fetch(`${base}${path}`, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
-    });
+    const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+    const signal = mergeSignals(timeoutSignal, init?.signal);
+
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        ...init,
+        signal,
+        headers: { "Content-Type": "application/json", ...init?.headers },
+      });
+    } catch (e) {
+      const aborted =
+        e instanceof Error &&
+        (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"));
+      if (aborted) {
+        lastErr =
+          timeoutSignal.aborted && !(init?.signal?.aborted ?? false)
+            ? `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`
+            : "Request aborted";
+        if (attempt < maxAttempts && isIdempotent) {
+          await new Promise((r) => setTimeout(r, 300 * attempt));
+          continue;
+        }
+        throw new Error(lastErr);
+      }
+      throw e;
+    }
 
     if (res.ok) {
       if (res.status === 204) return undefined as T;
@@ -58,7 +90,8 @@ export type Check = {
   httpStatus: number | null;
   responseTimeMs: number | null;
   errorMessage: string | null;
-  bodySnippet: string | null;
+  /** Omitted on list endpoint to save memory */
+  bodySnippet?: string | null;
 };
 
 export type Target = {
@@ -96,6 +129,9 @@ export type Stats = {
   p50Ms: number | null;
   p95Ms: number | null;
   longestOutageMs: number;
+  checkCount?: number;
+  checksLoaded?: number;
+  checksTruncated?: boolean;
   methodology: string;
 };
 
@@ -106,6 +142,7 @@ export function getStats(id: string, window: "24h" | "7d" | "30d") {
 export type IncidentsRes = {
   window: string;
   items: { startedAt: string; endedAt: string | null; durationMs: number | null; summary: string }[];
+  checksTruncated?: boolean;
 };
 
 export function getIncidents(id: string, window: "24h" | "7d" | "30d") {
@@ -114,6 +151,7 @@ export function getIncidents(id: string, window: "24h" | "7d" | "30d") {
 
 export type LatencySeries = {
   series: { t: string; avgMs: number | null; n: number }[];
+  checksTruncated?: boolean;
 };
 
 export function getLatencySeries(id: string) {

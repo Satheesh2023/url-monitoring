@@ -2,8 +2,13 @@ import PQueue from "p-queue";
 import { prisma } from "./db.js";
 import { postSlackTransition } from "./slack.js";
 
-/** Cap bytes read per check (keyword mode) to limit memory under high concurrency. */
-const READ_BODY_MAX = 65_536;
+function readBodyMaxBytes(): number {
+  const n = parseInt(process.env.READ_BODY_MAX_BYTES ?? "16384", 10);
+  return Number.isFinite(n) && n >= 2048 && n <= 131_072 ? n : 16_384;
+}
+
+/** Cap bytes read per check (keyword mode); default 16KiB for low RAM. Override READ_BODY_MAX_BYTES. */
+const READ_BODY_MAX = readBodyMaxBytes();
 
 type TargetRow = {
   id: string;
@@ -36,7 +41,7 @@ function envInt(name: string, fallback: number): number {
 
 const failuresBeforeDown = envInt("FLAP_FAILURES_BEFORE_DOWN", 3);
 const successesBeforeUp = envInt("FLAP_SUCCESSES_BEFORE_UP", 2);
-const concurrency = envInt("POLL_CONCURRENCY", 10);
+const concurrency = envInt("POLL_CONCURRENCY", 1);
 
 const queue = new PQueue({ concurrency });
 
@@ -89,19 +94,22 @@ async function runOneCheck(t: TargetRow): Promise<void> {
   const responseTimeMs = Date.now() - started;
   const checkedAt = new Date();
 
-  await prisma.check.create({
-    data: {
-      targetId: t.id,
-      checkedAt,
-      ok,
-      httpStatus,
-      responseTimeMs,
-      errorMessage,
-      bodySnippet,
-    },
-  });
-
-  await maybeAlertSlack(t, ok, checkedAt, responseTimeMs, errorMessage, httpStatus);
+  try {
+    await prisma.check.create({
+      data: {
+        targetId: t.id,
+        checkedAt,
+        ok,
+        httpStatus,
+        responseTimeMs,
+        errorMessage,
+        bodySnippet,
+      },
+    });
+    await maybeAlertSlack(t, ok, checkedAt, responseTimeMs, errorMessage, httpStatus);
+  } catch (e) {
+    console.error("[poller] persist or slack failed", t.id, t.url, e);
+  }
 }
 
 async function readBodySnippet(res: Response): Promise<string> {
@@ -155,29 +163,37 @@ async function maybeAlertSlack(
   const display = t.name?.trim() || t.url;
 
   if (st.slackNotified !== "DOWN" && st.consecutiveFail >= failuresBeforeDown) {
-    await postSlackTransition({
-      targetName: display,
-      url: t.url,
-      state: "DOWN",
-      checkedAt,
-      responseTimeMs: ok ? responseTimeMs : null,
-      errorMessage,
-      httpStatus,
-    });
-    st.slackNotified = "DOWN";
+    try {
+      await postSlackTransition({
+        targetName: display,
+        url: t.url,
+        state: "DOWN",
+        checkedAt,
+        responseTimeMs: ok ? responseTimeMs : null,
+        errorMessage,
+        httpStatus,
+      });
+      st.slackNotified = "DOWN";
+    } catch (e) {
+      console.error("[poller] slack DOWN notify failed", t.id, e);
+    }
   }
 
   if (st.slackNotified === "DOWN" && st.consecutiveOk >= successesBeforeUp) {
-    await postSlackTransition({
-      targetName: display,
-      url: t.url,
-      state: "UP",
-      checkedAt,
-      responseTimeMs,
-      errorMessage: null,
-      httpStatus,
-    });
-    st.slackNotified = "UP";
+    try {
+      await postSlackTransition({
+        targetName: display,
+        url: t.url,
+        state: "UP",
+        checkedAt,
+        responseTimeMs,
+        errorMessage: null,
+        httpStatus,
+      });
+      st.slackNotified = "UP";
+    } catch (e) {
+      console.error("[poller] slack UP notify failed", t.id, e);
+    }
   }
 
   if (st.slackNotified === null && ok && st.consecutiveOk >= 1) {

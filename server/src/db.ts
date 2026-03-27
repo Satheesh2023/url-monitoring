@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
+// For low memory, add to DATABASE_URL: ?connection_limit=3&pool_timeout=20 (MySQL).
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({

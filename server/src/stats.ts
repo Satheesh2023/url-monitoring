@@ -1,5 +1,9 @@
 import type { Check } from "@prisma/client";
 
+/** Slim rows for RAM — omit id, bodySnippet, targetId where not needed */
+export type CheckStatsSlice = Pick<Check, "checkedAt" | "ok" | "responseTimeMs">;
+export type CheckIncidentSlice = Pick<Check, "checkedAt" | "ok" | "errorMessage" | "httpStatus">;
+
 export type WindowKey = "24h" | "7d" | "30d";
 
 export function windowBounds(window: WindowKey): { start: Date; end: Date } {
@@ -9,7 +13,7 @@ export function windowBounds(window: WindowKey): { start: Date; end: Date } {
   return { start: new Date(end.getTime() - ms), end };
 }
 
-export function computeUptimeAndIncidents(checks: Check[], windowStart: Date, windowEnd: Date) {
+export function computeUptimeAndIncidents(checks: CheckStatsSlice[], windowStart: Date, windowEnd: Date) {
   if (checks.length === 0) {
     return {
       uptimePercent: null as number | null,
@@ -99,7 +103,7 @@ export function percentile(sorted: number[], p: number): number | null {
 }
 
 export function downsampleLatencySeries(
-  checks: Check[],
+  checks: CheckStatsSlice[],
   windowStart: Date,
   windowEnd: Date,
   bucketMs: number
@@ -126,7 +130,7 @@ export function downsampleLatencySeries(
   });
 }
 
-export function buildIncidentList(checks: Check[], windowStart: Date, windowEnd: Date) {
+export function buildIncidentList(checks: CheckIncidentSlice[], windowStart: Date, windowEnd: Date) {
   const ws = windowStart.getTime();
   const we = windowEnd.getTime();
   const inWindow = checks
