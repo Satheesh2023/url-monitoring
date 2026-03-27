@@ -1,0 +1,17 @@
+# Bump newTag when CI pushes a new image (short SHA, e.g. e6cf1).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: url-monitoring
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - cronjob-weekly.yaml
+
+images:
+  - name: satheesh2023/url-monitoring
+    newName: satheesh2023/url-monitoring
+    newTag: e6cf1

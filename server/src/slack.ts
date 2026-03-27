@@ -5,6 +5,13 @@ function truncate(s: string, n: number): string {
   return s.slice(0, n - 1) + "…";
 }
 
+/** If set (e.g. #alerts or C0123…), included in webhook JSON — Slack may ignore if webhook is single-channel. */
+function webhookBody(text: string): { text: string; channel?: string } {
+  const t = truncate(text, MAX_SLACK);
+  const ch = process.env.SLACK_CHANNEL?.trim();
+  return ch ? { channel: ch, text: t } : { text: t };
+}
+
 export type SlackState = "UP" | "DOWN";
 
 export async function postSlackTransition(payload: {
@@ -35,11 +42,10 @@ export async function postSlackTransition(payload: {
     lines.push(`Response: ${payload.responseTimeMs} ms`);
   }
 
-  const text = truncate(lines.join("\n"), MAX_SLACK);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(webhookBody(lines.join("\n"))),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -56,7 +62,7 @@ export async function postSlackWeeklyReport(text: string): Promise<void> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: truncate(text, MAX_SLACK) }),
+    body: JSON.stringify(webhookBody(text)),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

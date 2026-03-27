@@ -16,6 +16,7 @@ server/public/
 .env
 .env.*
 !.env.example
+eks-deploy/secret-app.yaml
 
 # Logs & diagnostics
 logs/

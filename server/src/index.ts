@@ -28,8 +28,8 @@ const port = parseInt(process.env.PORT ?? "3000", 10);
 
 const stopPoller = startPoller(1000);
 
-const server = app.listen(port, () => {
-  console.log(`[server] listening on :${port}`);
+const server = app.listen(port, "0.0.0.0", () => {
+  console.log(`[server] listening on 0.0.0.0:${port}`);
 });
 
 function shutdown(signal: string) {

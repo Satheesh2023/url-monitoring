@@ -1,0 +1,53 @@
+# Monday 09:00 UTC — same image as Deployment; uses Aurora via DATABASE_URL.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: url-monitoring-weekly-report
+  labels:
+    app: url-monitoring
+spec:
+  schedule: "0 9 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: report
+              image: satheesh2023/url-monitoring:e6cf1
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - node dist/scripts/weekly-report.js
+              workingDir: /app/server
+              env:
+                - name: NODE_ENV
+                  value: production
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secret
+                      key: DATABASE_URL
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secret
+                      key: SLACK_WEBHOOK_URL
+                - name: SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secret
+                      key: SLACK_CHANNEL
+                      optional: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "500m"
+                  memory: 512Mi
