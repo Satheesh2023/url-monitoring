@@ -80,33 +80,78 @@ function parseWindow(q: unknown): WindowKey {
   return "24h";
 }
 
+type TargetsListResponse = {
+  targets: (Target & { latest: LatestCheckRow | null })[];
+  partialLatest: boolean;
+};
+
+/** Cuts DB QPS when many browsers poll `/api/targets` (set `0` to disable). */
+function targetsListCacheTtlMs(): number {
+  const n = parseInt(process.env.LIST_TARGETS_CACHE_MS ?? "4000", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 4000;
+}
+
+let targetsListCache: { expiresAt: number; body: TargetsListResponse } | null = null;
+let targetsListInflight: Promise<TargetsListResponse> | null = null;
+
+function invalidateTargetsListCache(): void {
+  targetsListCache = null;
+}
+
+async function buildTargetsListResponse(): Promise<TargetsListResponse> {
+  const targets = await listTargetsOrderByCreated();
+  const ids = targets.map((t) => t.id);
+  let latest: LatestCheckRow[] = [];
+  let latestQueryFailed = false;
+  if (ids.length > 0) {
+    try {
+      latest = await findLatestCheckPerTarget(ids);
+    } catch (e) {
+      latestQueryFailed = true;
+      console.error("[api] /api/targets latest checks query failed", e);
+    }
+  }
+  const byId = new Map<string, LatestCheckRow>(latest.map((c) => [c.targetId, c]));
+  return {
+    targets: targets.map((t: Target) => ({
+      ...t,
+      latest: byId.get(t.id) ?? null,
+    })),
+    partialLatest: latestQueryFailed,
+  };
+}
+
+async function getTargetsListResponse(): Promise<TargetsListResponse> {
+  const ttl = targetsListCacheTtlMs();
+  const now = Date.now();
+  if (ttl > 0 && targetsListCache && targetsListCache.expiresAt > now) {
+    return targetsListCache.body;
+  }
+  if (targetsListInflight) {
+    return targetsListInflight;
+  }
+  targetsListInflight = (async () => {
+    try {
+      const body = await buildTargetsListResponse();
+      if (ttl > 0) {
+        targetsListCache = { expiresAt: Date.now() + ttl, body };
+      }
+      return body;
+    } finally {
+      targetsListInflight = null;
+    }
+  })();
+  return targetsListInflight;
+}
+
 export function registerApi(app: Express): void {
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
 
   app.get("/api/targets", asyncRoute(async (_req, res) => {
-    const targets = await listTargetsOrderByCreated();
-    const ids = targets.map((t) => t.id);
-    let latest: LatestCheckRow[] = [];
-    let latestQueryFailed = false;
-    if (ids.length > 0) {
-      try {
-        latest = await findLatestCheckPerTarget(ids);
-      } catch (e) {
-        latestQueryFailed = true;
-        console.error("[api] /api/targets latest checks query failed", e);
-      }
-    }
-    const byId = new Map<string, LatestCheckRow>(latest.map((c) => [c.targetId, c]));
-    res.json({
-      targets: targets.map((t: Target) => ({
-        ...t,
-        latest: byId.get(t.id) ?? null,
-      })),
-      /** True when the latest-check query failed (DB tmp full, pool timeout, etc.). */
-      partialLatest: latestQueryFailed,
-    });
+    const body = await getTargetsListResponse();
+    res.json(body);
   }));
 
   app.post("/api/targets", asyncRoute(async (req, res) => {
@@ -116,6 +161,7 @@ export function registerApi(app: Express): void {
       return;
     }
     const t = await createTarget(parsed.data);
+    invalidateTargetsListCache();
     res.status(201).json(t);
   }));
 
@@ -141,6 +187,7 @@ export function registerApi(app: Express): void {
       res.status(404).json({ error: "not found" });
       return;
     }
+    invalidateTargetsListCache();
     res.json(t);
   }));
 
@@ -151,6 +198,7 @@ export function registerApi(app: Express): void {
       res.status(404).json({ error: "not found" });
       return;
     }
+    invalidateTargetsListCache();
     res.status(204).send();
   }));
 

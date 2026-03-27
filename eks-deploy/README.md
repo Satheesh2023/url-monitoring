@@ -2,7 +2,7 @@
 
 Manifests for running the **url-monitoring** image on EKS behind an **AWS ALB**, with **Amazon Aurora MySQL** as the database (no in-cluster MySQL).
 
-Default image in these manifests: **`satheesh2023/url-monitoring:ea0b9`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
+Default image in these manifests: **`satheesh2023/url-monitoring:04b76`** (change `images.newTag` in `kustomization.yaml` when you publish a new tag).
 
 **Slack channel:** Most org webhooks post only to the channel picked when the webhook was created — you do not set the channel in Kubernetes. Optionally set **`SLACK_CHANNEL`** in `secret-app.yaml` (e.g. `#uptime-alerts`) if your Slack setup allows [channel override](https://api.slack.com/messaging/webhooks); otherwise leave it empty or omit the key.
 
@@ -64,7 +64,8 @@ Point your DNS **CNAME** (or Alias **A/ALIAS** for Route 53) to the **ALB hostna
 
 ## 5. Notes
 
-- **EKS:** Pods run **`node` only**; run **`job-db-migrate.yaml`** for schema updates (see §2). The **Dockerfile** `CMD` still runs migrate + node for simple local `docker run`.
+- **EKS:** Pods run **`node dist/index.js` only**; run **`job-db-migrate.yaml`** for schema updates (see §2).
+- **`LIST_TARGETS_CACHE_MS`** (Deployment env, default `4000`): TTL cache for **`GET /api/targets`** to cut Aurora reads when many browsers poll; set **`0`** to disable.
 - Health checks use **`/api/health`** (matches app probes and ALB health check).
 - Weekly report CronJob uses the same image and `DATABASE_URL`; schedule is **UTC** (`0 9 * * 1` = Monday 09:00 UTC).
 

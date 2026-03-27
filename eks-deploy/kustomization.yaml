@@ -1,4 +1,4 @@
-# Bump newTag when CI pushes a new image (short SHA, e.g. ea0b9).
+# Bump newTag when CI pushes a new image (short SHA, e.g. 04b76).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -14,4 +14,4 @@ resources:
 images:
   - name: satheesh2023/url-monitoring
     newName: satheesh2023/url-monitoring
-    newTag: "ea0b9"
+    newTag: "04b76"

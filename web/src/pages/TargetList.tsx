@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { createTarget, deleteTarget, listTargets, type Target } from "../api";
 
 const TARGETS_CACHE_KEY = "hm-targets-list-v1";
+/** Keeps Aurora read QPS down vs 5s polling × tabs × replicas. */
+const LIST_REFRESH_MS = 20_000;
 
 function readCachedTargets(): Target[] {
   try {
@@ -60,7 +62,7 @@ export default function TargetList() {
 
   useEffect(() => {
     void refresh();
-    const id = setInterval(() => void refresh(), 5000);
+    const id = setInterval(() => void refresh(), LIST_REFRESH_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -91,7 +93,7 @@ export default function TargetList() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Targets</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Live status refreshes every 5s. Open a row for history, uptime, and latency.
+          Live status refreshes every 20s. Open a row for history, uptime, and latency.
         </p>
       </div>
 
@@ -130,7 +132,7 @@ export default function TargetList() {
         <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
           <p className="font-medium text-amber-50">Cached list — live refresh failed</p>
           <p className="mt-1 text-amber-100/90">
-            Up / Down below is from the last successful load and may be wrong. Retrying every 5s.
+            Up / Down below is from the last successful load and may be wrong. Retrying every 20s.
           </p>
         </div>
       )}
@@ -139,7 +141,7 @@ export default function TargetList() {
         <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
           <p className="font-medium text-amber-50">Could not load targets</p>
           <p className="mt-1 text-amber-100/90">
-            The API did not respond in time or returned an error. Retrying every 5s.
+            The API did not respond in time or returned an error. Retrying every 20s.
           </p>
         </div>
       )}
@@ -151,7 +153,7 @@ export default function TargetList() {
             Targets loaded, but the database could not return probe results (e.g. Aurora{" "}
             <code className="rounded bg-sky-950 px-1 text-xs">/rdsdbdata/tmp</code> full or DB
             overload). Status shows <span className="font-medium">No data</span> until the DB
-            recovers. Retrying every 5s.
+            recovers. Retrying every 20s.
           </p>
         </div>
       )}

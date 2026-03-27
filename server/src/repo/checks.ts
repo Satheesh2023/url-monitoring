@@ -2,8 +2,6 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { pool, newRowId } from "../db.js";
 import type { Check, LatestCheckRow } from "../types.js";
 import type { CheckIncidentSlice, CheckStatsSlice } from "../stats.js";
-import { placeholders } from "./sql-utils.js";
-
 function mapCheckRow(r: RowDataPacket): Check {
   return {
     id: r.id,
@@ -29,24 +27,45 @@ function mapLatestRow(r: RowDataPacket): LatestCheckRow {
   };
 }
 
+function placeholders(n: number): string {
+  if (n <= 0) return "";
+  return Array(n).fill("?").join(", ");
+}
+
 /**
- * Latest row per target — ROW_NUMBER avoids Prisma DISTINCT + sort temp files on huge tables.
- * Requires MySQL 8+ / Aurora MySQL 3.x.
+ * Latest row per target: aggregate `MAX(checked_at)` per target (uses `(target_id, checked_at)`),
+ * then join back to `checks`. Tie on `checked_at` → keep greatest `id` (ORDER BY id DESC + dedupe).
+ * Chunks large `IN (...)` lists for parser / planner friendliness.
  */
+const LATEST_AGG_IN_CHUNK = 200;
+
 export async function findLatestCheckPerTarget(targetIds: string[]): Promise<LatestCheckRow[]> {
   if (targetIds.length === 0) return [];
-  const ph = placeholders(targetIds.length);
-  const sql = `
-    SELECT id, target_id, checked_at, ok, http_status, response_time_ms, error_message
-    FROM (
-      SELECT id, target_id, checked_at, ok, http_status, response_time_ms, error_message,
-        ROW_NUMBER() OVER (PARTITION BY target_id ORDER BY checked_at DESC, id DESC) AS rn
-      FROM checks
-      WHERE target_id IN (${ph})
-    ) sub
-    WHERE rn = 1`;
-  const [rows] = await pool.execute<RowDataPacket[]>(sql, targetIds);
-  return rows.map(mapLatestRow);
+  const uniq = [...new Set(targetIds)];
+  const out: LatestCheckRow[] = [];
+  for (let i = 0; i < uniq.length; i += LATEST_AGG_IN_CHUNK) {
+    const chunk = uniq.slice(i, i + LATEST_AGG_IN_CHUNK);
+    const ph = placeholders(chunk.length);
+    const sql = `
+      SELECT c.id, c.target_id, c.checked_at, c.ok, c.http_status, c.response_time_ms, c.error_message
+      FROM checks c
+      INNER JOIN (
+        SELECT target_id, MAX(checked_at) AS mx
+        FROM checks
+        WHERE target_id IN (${ph})
+        GROUP BY target_id
+      ) t ON c.target_id = t.target_id AND c.checked_at = t.mx
+      ORDER BY c.target_id ASC, c.id DESC`;
+    const [rows] = await pool.execute<RowDataPacket[]>(sql, chunk);
+    const seen = new Set<string>();
+    for (const r of rows as RowDataPacket[]) {
+      const tid = String(r.target_id);
+      if (seen.has(tid)) continue;
+      seen.add(tid);
+      out.push(mapLatestRow(r));
+    }
+  }
+  return out;
 }
 
 export async function insertCheck(input: {

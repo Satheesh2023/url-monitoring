@@ -37,7 +37,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:ea0b9
+          image: satheesh2023/url-monitoring:04b76
           imagePullPolicy: IfNotPresent
           # Do not run DB migrations here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
@@ -81,6 +81,9 @@ spec:
               value: "3"
             - name: FLAP_SUCCESSES_BEFORE_UP
               value: "2"
+            # Short TTL cache + in-flight coalesce for GET /api/targets (many UI pollers). Set "0" to disable.
+            - name: LIST_TARGETS_CACHE_MS
+              value: "4000"
           lifecycle:
             preStop:
               exec:

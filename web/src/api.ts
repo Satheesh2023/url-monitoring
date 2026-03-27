@@ -2,6 +2,8 @@ const base = "";
 
 /** Prevents indefinite "Loading…" when the browser fetch never completes (ALB / network hang). */
 const FETCH_TIMEOUT_MS = 25_000;
+/** `/api/targets` can be slower (DB); keep above default so list view does not false-timeout. */
+const LIST_TARGETS_TIMEOUT_MS = 60_000;
 
 function mergeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
   if (!b) return a;
@@ -9,17 +11,18 @@ function mergeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
   return a;
 }
 
-function userFacingNetworkError(e: unknown, timedOut: boolean): Error {
+function userFacingNetworkError(e: unknown, timedOut: boolean, timeoutMs: number): Error {
+  const sec = timeoutMs / 1000;
   if (timedOut) {
     return new Error(
-      `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s — the API or database may be slow or unavailable.`
+      `Request timed out after ${sec}s — the API or database may be slow or unavailable.`
     );
   }
   if (e instanceof Error) {
     const m = e.message;
     if (/signal.*timed out|TimeoutError|timed out|aborted due to timeout/i.test(m)) {
       return new Error(
-        `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s — the API or database may be slow or unavailable.`
+        `Request timed out after ${sec}s — the API or database may be slow or unavailable.`
       );
     }
     return e;
@@ -40,36 +43,41 @@ function formatHttpError(status: number, body: string): string {
   return `Request failed (${status})`;
 }
 
-async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method ?? "GET").toUpperCase();
+type JInit = RequestInit & { timeoutMs?: number };
+
+async function j<T>(path: string, init?: JInit): Promise<T> {
+  const { timeoutMs: customTimeout, ...restInit } = init ?? {};
+  const timeoutMs =
+    typeof customTimeout === "number" && customTimeout > 0 ? customTimeout : FETCH_TIMEOUT_MS;
+  const method = (restInit.method ?? "GET").toUpperCase();
   const isIdempotent = method === "GET" || method === "HEAD";
   const maxAttempts = isIdempotent ? 4 : 1;
 
   let lastErr = "Request failed";
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
-    const signal = mergeSignals(timeoutSignal, init?.signal);
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signal = mergeSignals(timeoutSignal, restInit.signal);
 
     let res: Response;
     try {
       res = await fetch(`${base}${path}`, {
-        ...init,
+        ...restInit,
         signal,
-        headers: { "Content-Type": "application/json", ...init?.headers },
+        headers: { "Content-Type": "application/json", ...restInit.headers },
       });
     } catch (e) {
       const aborted =
         e instanceof Error &&
         (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"));
       if (aborted) {
-        const timedOut = timeoutSignal.aborted && !(init?.signal?.aborted ?? false);
+        const timedOut = timeoutSignal.aborted && !(restInit.signal?.aborted ?? false);
         if (attempt < maxAttempts && isIdempotent) {
           await new Promise((r) => setTimeout(r, 300 * attempt));
           continue;
         }
-        throw userFacingNetworkError(e, timedOut);
+        throw userFacingNetworkError(e, timedOut, timeoutMs);
       }
-      throw userFacingNetworkError(e, false);
+      throw userFacingNetworkError(e, false, timeoutMs);
     }
 
     if (res.ok) {
@@ -128,7 +136,7 @@ export type Target = {
 export type ListTargetsResult = { targets: Target[]; partialLatest: boolean };
 
 export async function listTargets(): Promise<ListTargetsResult> {
-  const raw = await j<unknown>("/api/targets");
+  const raw = await j<unknown>("/api/targets", { timeoutMs: LIST_TARGETS_TIMEOUT_MS });
   if (Array.isArray(raw)) {
     return { targets: raw as Target[], partialLatest: false };
   }
