@@ -1,3 +1,4 @@
+# 2 pods, image CMD = prisma migrate + node (Dockerfile). Secret app-secret required.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,14 +6,13 @@ metadata:
   labels:
     app: url-monitoring
 spec:
-  # Spread load; rolling update keeps at least desired count ready (maxUnavailable: 0).
-  replicas: 3
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
-  minReadySeconds: 20
+      maxUnavailable: 1
+      maxSurge: 0
+  minReadySeconds: 15
   selector:
     matchLabels:
       app: url-monitoring
@@ -22,18 +22,9 @@ spec:
         app: url-monitoring
     spec:
       terminationGracePeriodSeconds: 45
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: url-monitoring
-                topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:2587b
+          image: satheesh2023/url-monitoring:3ee3f
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -41,6 +32,8 @@ spec:
           env:
             - name: NODE_ENV
               value: production
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=2560"
             - name: PORT
               value: "3000"
             - name: DATABASE_URL
@@ -59,9 +52,8 @@ spec:
                   name: app-secret
                   key: SLACK_CHANNEL
                   optional: true
-            # Lower if many targets to reduce event-loop pressure (helps /api/health latency).
             - name: POLL_CONCURRENCY
-              value: "5"
+              value: "2"
             - name: FLAP_FAILURES_BEFORE_DOWN
               value: "3"
             - name: FLAP_SUCCESSES_BEFORE_UP
@@ -69,10 +61,7 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # Let ALB deregister this pod before SIGTERM (target group deregistration delay).
-                command: ["/bin/sh", "-c", "sleep 20"]
-          # migrate deploy runs before Node listens — without this, liveness hits
-          # connection refused and kubelet restarts the pod (503 from ALB).
+                command: ["/bin/sh", "-c", "sleep 15"]
           startupProbe:
             httpGet:
               path: /api/health
@@ -85,7 +74,6 @@ spec:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 0
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 6
@@ -93,14 +81,13 @@ spec:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 0
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
-              memory: 512Mi
+              cpu: 200m
+              memory: 1536Mi
             limits:
               cpu: "2"
-              memory: 1Gi
+              memory: 3Gi

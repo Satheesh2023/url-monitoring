@@ -1,5 +1,7 @@
 const MAX_SLACK = 3000;
 
+let warnedMissingWebhook = false;
+
 function truncate(s: string, n: number): string {
   if (s.length <= n) return s;
   return s.slice(0, n - 1) + "…";
@@ -25,7 +27,10 @@ export async function postSlackTransition(payload: {
 }): Promise<void> {
   const url = process.env.SLACK_WEBHOOK_URL;
   if (!url) {
-    console.warn("[slack] SLACK_WEBHOOK_URL not set; skipping notification");
+    if (!warnedMissingWebhook) {
+      console.warn("[slack] SLACK_WEBHOOK_URL not set; skipping notifications (this message logs once)");
+      warnedMissingWebhook = true;
+    }
     return;
   }
 
@@ -56,7 +61,10 @@ export async function postSlackTransition(payload: {
 export async function postSlackWeeklyReport(text: string): Promise<void> {
   const url = process.env.SLACK_WEBHOOK_URL;
   if (!url) {
-    console.warn("[slack] SLACK_WEBHOOK_URL not set; skipping weekly report");
+    if (!warnedMissingWebhook) {
+      console.warn("[slack] SLACK_WEBHOOK_URL not set; skipping weekly report (this message logs once)");
+      warnedMissingWebhook = true;
+    }
     return;
   }
   const res = await fetch(url, {

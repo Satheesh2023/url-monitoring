@@ -2,7 +2,8 @@ import PQueue from "p-queue";
 import { prisma } from "./db.js";
 import { postSlackTransition } from "./slack.js";
 
-const READ_BODY_MAX = 256_000;
+/** Cap bytes read per check (keyword mode) to limit memory under high concurrency. */
+const READ_BODY_MAX = 65_536;
 
 type TargetRow = {
   id: string;
@@ -60,6 +61,7 @@ async function runOneCheck(t: TargetRow): Promise<void> {
     const inRange = httpStatus >= t.statusMin && httpStatus <= t.statusMax;
     if (!inRange) {
       errorMessage = `Status ${httpStatus} outside ${t.statusMin}–${t.statusMax}`;
+      await res.body?.cancel?.();
     } else if (t.keyword) {
       const text = await readBodySnippet(res);
       bodySnippet = text.slice(0, 500);
@@ -108,15 +110,23 @@ async function readBodySnippet(res: Response): Promise<string> {
   const decoder = new TextDecoder();
   let out = "";
   let total = 0;
-  while (total < READ_BODY_MAX) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      total += value.length;
-      out += decoder.decode(value, { stream: true });
+  try {
+    while (total < READ_BODY_MAX) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.length;
+        out += decoder.decode(value, { stream: true });
+      }
+    }
+    if (total >= READ_BODY_MAX) await reader.cancel().catch(() => {});
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
     }
   }
-  reader.releaseLock();
   return out;
 }
 
@@ -185,7 +195,9 @@ export function startPoller(globalPollTickMs = 1000): () => void {
         const intervalMs = Math.max(1, t.pollIntervalSec) * 1000;
         if (now - last >= intervalMs) {
           lastRunAt.set(t.id, now);
-          void queue.add(() => runOneCheck(t as TargetRow));
+          void queue
+            .add(() => runOneCheck(t as TargetRow))
+            .catch((e) => console.error("[poller] check error", t.id, e));
         }
       }
     } catch (e) {

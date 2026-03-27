@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import { prisma } from "./db.js";
 import { registerApi } from "./routes/api.js";
 import { startPoller } from "./poller.js";
 
@@ -35,7 +36,12 @@ const server = app.listen(port, "0.0.0.0", () => {
 function shutdown(signal: string) {
   console.log(`[server] ${signal}, shutting down`);
   stopPoller();
-  server.close(() => process.exit(0));
+  server.close(() => {
+    void prisma
+      .$disconnect()
+      .catch(() => {})
+      .finally(() => process.exit(0));
+  });
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

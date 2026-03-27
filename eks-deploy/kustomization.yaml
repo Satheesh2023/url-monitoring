@@ -9,10 +9,9 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
-  - pdb.yaml
   - cronjob-weekly.yaml
 
 images:
   - name: satheesh2023/url-monitoring
     newName: satheesh2023/url-monitoring
-    newTag: "2587b"
+    newTag: "3ee3f"
