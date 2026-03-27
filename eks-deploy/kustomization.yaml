@@ -15,4 +15,4 @@ resources:
 images:
   - name: satheesh2023/url-monitoring
     newName: satheesh2023/url-monitoring
-    newTag: e6cf1
+    newTag: "2587b"

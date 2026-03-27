@@ -33,7 +33,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:25451
+          image: satheesh2023/url-monitoring:2587b
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
