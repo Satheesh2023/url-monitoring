@@ -37,7 +37,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:a90b7
+          image: satheesh2023/url-monitoring:9030e
           imagePullPolicy: IfNotPresent
           # Do not run prisma migrate here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
@@ -49,9 +49,9 @@ spec:
           env:
             - name: NODE_ENV
               value: production
-            # Heap below 3Gi limit — leave headroom for native (Prisma, TLS, buffers).
+            # ~512Mi pod: cap V8 heap so RSS stays low (native + Prisma need the rest).
             - name: NODE_OPTIONS
-              value: "--max-old-space-size=2560"
+              value: "--max-old-space-size=384"
             - name: PORT
               value: "3000"
             - name: DATABASE_URL
@@ -71,7 +71,12 @@ spec:
                   key: SLACK_CHANNEL
                   optional: true
             - name: POLL_CONCURRENCY
-              value: "2"
+              value: "1"
+            # Max checks loaded per stats/incidents/latency window (skip oldest if over cap)
+            - name: STATS_CHECK_CAP
+              value: "40000"
+            - name: READ_BODY_MAX_BYTES
+              value: "16384"
             - name: FLAP_FAILURES_BEFORE_DOWN
               value: "3"
             - name: FLAP_SUCCESSES_BEFORE_UP
@@ -106,7 +111,7 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 2Gi
+              memory: 512Mi
             limits:
-              cpu: "2"
-              memory: 3Gi
+              cpu: "1"
+              memory: 512Mi

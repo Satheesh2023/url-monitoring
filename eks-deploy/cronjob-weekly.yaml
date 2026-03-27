@@ -18,7 +18,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: report
-              image: satheesh2023/url-monitoring:a90b7
+              image: satheesh2023/url-monitoring:9030e
               imagePullPolicy: IfNotPresent
               command:
                 - sh
