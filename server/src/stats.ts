@@ -1,8 +1,15 @@
-import type { Check } from "@prisma/client";
-
 /** Slim rows for RAM — omit id, bodySnippet, targetId where not needed */
-export type CheckStatsSlice = Pick<Check, "checkedAt" | "ok" | "responseTimeMs">;
-export type CheckIncidentSlice = Pick<Check, "checkedAt" | "ok" | "errorMessage" | "httpStatus">;
+export type CheckStatsSlice = {
+  checkedAt: Date;
+  ok: boolean;
+  responseTimeMs: number | null;
+};
+export type CheckIncidentSlice = {
+  checkedAt: Date;
+  ok: boolean;
+  errorMessage: string | null;
+  httpStatus: number | null;
+};
 
 export type WindowKey = "24h" | "7d" | "30d";
 

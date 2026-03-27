@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { fetchChecksBudgeted, selectCheckStats } from "../check-query.js";
+import { fetchChecksBudgetedStats } from "../check-query.js";
 import { prisma } from "../db.js";
 import { computeUptimeAndIncidents, percentile, windowBounds } from "../stats.js";
 import { postSlackWeeklyReport } from "../slack.js";
@@ -23,7 +23,7 @@ async function main() {
 
   for (const t of targets) {
     try {
-      const { rows: checks } = await fetchChecksBudgeted(t.id, start, end, selectCheckStats);
+      const { rows: checks } = await fetchChecksBudgetedStats(t.id, start, end);
       const u = computeUptimeAndIncidents(checks, start, end);
       const sorted = [...u.latenciesMs].sort((a, b) => a - b);
       const p50 = percentile(sorted, 50);
