@@ -11,15 +11,21 @@ export default function TargetList() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  /** True when a refresh failed but we still show the last successful list */
+  const [stale, setStale] = useState(false);
   const [url, setUrl] = useState("https://example.com");
   const [name, setName] = useState("");
 
   async function refresh() {
-    setErr(null);
     try {
-      setTargets(await listTargets());
+      const data = await listTargets();
+      setTargets(data);
+      setErr(null);
+      setStale(false);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load");
+      setStale(true);
+      // Do not clear targets — avoids "No targets yet" during transient 503 / ALB blips.
     } finally {
       setLoading(false);
     }
@@ -91,6 +97,13 @@ export default function TargetList() {
           Add target
         </button>
       </form>
+
+      {stale && targets.length > 0 && (
+        <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+          Showing last loaded data — API was temporarily unreachable. Auto-refresh every 5s until it
+          recovers.
+        </div>
+      )}
 
       {err && (
         <div className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-200">

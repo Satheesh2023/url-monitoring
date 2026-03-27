@@ -1,16 +1,53 @@
 const base = "";
 
-async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+function formatHttpError(status: number, body: string): string {
+  const b = body.trim();
+  if (
+    b.toLowerCase().startsWith("<!doctype") ||
+    b.includes("<html") ||
+    b.includes("<HTML")
+  ) {
+    return `Gateway error (${status}): load balancer had no healthy backend (often brief). Retried automatically.`;
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (b.length > 0 && b.length < 500 && !b.includes("<")) return b;
+  return `Request failed (${status})`;
+}
+
+async function j<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isIdempotent = method === "GET" || method === "HEAD";
+  const maxAttempts = isIdempotent ? 4 : 1;
+
+  let lastErr = "Request failed";
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(`${base}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+
+    if (res.ok) {
+      if (res.status === 204) return undefined as T;
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        const t = await res.text();
+        throw new Error(formatHttpError(res.status, t));
+      }
+      return res.json() as Promise<T>;
+    }
+
+    const text = await res.text();
+    lastErr = formatHttpError(res.status, text);
+
+    if (
+      attempt < maxAttempts &&
+      (res.status === 502 || res.status === 503 || res.status === 504)
+    ) {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+      continue;
+    }
+    throw new Error(lastErr);
+  }
+  throw new Error(lastErr);
 }
 
 export type Check = {

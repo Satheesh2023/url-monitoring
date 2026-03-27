@@ -9,6 +9,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - pdb.yaml
   - cronjob-weekly.yaml
 
 images:

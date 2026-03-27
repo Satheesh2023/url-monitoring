@@ -38,11 +38,19 @@ export function registerApi(app: Express): void {
   app.get("/api/targets", async (_req, res) => {
     const targets = await prisma.target.findMany({ orderBy: { createdAt: "asc" } });
     const ids = targets.map((t) => t.id);
-    const latest = await prisma.check.findMany({
-      where: { targetId: { in: ids } },
-      orderBy: { checkedAt: "desc" },
-      distinct: ["targetId"],
-    });
+    let latest: Check[] = [];
+    if (ids.length > 0) {
+      try {
+        // distinct requires orderBy to start with the same field(s) — avoids MySQL/Prisma errors
+        latest = await prisma.check.findMany({
+          where: { targetId: { in: ids } },
+          orderBy: [{ targetId: "asc" }, { checkedAt: "desc" }],
+          distinct: ["targetId"],
+        });
+      } catch (e) {
+        console.error("[api] /api/targets latest checks query failed", e);
+      }
+    }
     const byId = new Map<string, Check>(latest.map((c: Check) => [c.targetId, c]));
     res.json(
       targets.map((t: Target) => ({

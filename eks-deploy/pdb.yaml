@@ -1,0 +1,12 @@
+# With 3 replicas, keep 2 up during voluntary disruptions when possible.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: url-monitoring
+  labels:
+    app: url-monitoring
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: url-monitoring
