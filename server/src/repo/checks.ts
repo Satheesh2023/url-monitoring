@@ -99,10 +99,12 @@ export async function listChecksPage(
   offset: number,
   limit: number
 ): Promise<Check[]> {
+  const lim = safeLimitInt(limit, 500);
+  const off = safeOffsetInt(offset);
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT id, target_id, checked_at, ok, http_status, response_time_ms, error_message, body_snippet
-     FROM checks WHERE target_id = ? ORDER BY checked_at DESC LIMIT ? OFFSET ?`,
-    [targetId, limit, offset]
+     FROM checks WHERE target_id = ? ORDER BY checked_at DESC LIMIT ${lim} OFFSET ${off}`,
+    [targetId]
   );
   return rows.map(mapCheckRow);
 }
@@ -121,6 +123,22 @@ function checkCap(): number {
 }
 
 /**
+ * Aurora MySQL often rejects bound `LIMIT ?` / `OFFSET ?` in prepared statements
+ * (`Incorrect arguments to mysqld_stmt_execute`). Inline validated integers instead.
+ */
+function safeLimitInt(n: number, max = 500_000): number {
+  const lim = Math.floor(Number(n));
+  if (!Number.isFinite(lim) || lim < 1) return 1;
+  return Math.min(lim, max);
+}
+
+function safeOffsetInt(n: number, max = 2_000_000_000): number {
+  const o = Math.floor(Number(n));
+  if (!Number.isFinite(o) || o < 0) return 0;
+  return Math.min(o, max);
+}
+
+/**
  * Newest `cap` rows in [start,end] — no OFFSET scan (avoids multi-minute queries on large windows).
  */
 export async function fetchChecksBudgetedStats(
@@ -128,7 +146,7 @@ export async function fetchChecksBudgetedStats(
   start: Date,
   end: Date
 ): Promise<{ rows: CheckStatsSlice[]; totalInWindow: number; truncated: boolean }> {
-  const cap = checkCap();
+  const cap = safeLimitInt(checkCap());
   const [[countRows], [dataRows]] = await Promise.all([
     pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) AS c FROM checks
@@ -139,8 +157,8 @@ export async function fetchChecksBudgetedStats(
       `SELECT checked_at, ok, response_time_ms FROM checks
        WHERE target_id = ? AND checked_at >= ? AND checked_at <= ?
        ORDER BY checked_at DESC
-       LIMIT ?`,
-      [targetId, start, end, cap]
+       LIMIT ${cap}`,
+      [targetId, start, end]
     ),
   ]);
   const totalInWindow = Number(countRows[0]?.c ?? 0);
@@ -170,7 +188,7 @@ export async function fetchChecksBudgetedDashboard(
   start: Date,
   end: Date
 ): Promise<{ rows: DashboardCheckRow[]; totalInWindow: number; truncated: boolean }> {
-  const cap = checkCap();
+  const cap = safeLimitInt(checkCap());
   const [[countRows], [dataRows]] = await Promise.all([
     pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) AS c FROM checks
@@ -181,8 +199,8 @@ export async function fetchChecksBudgetedDashboard(
       `SELECT checked_at, ok, response_time_ms, error_message, http_status FROM checks
        WHERE target_id = ? AND checked_at >= ? AND checked_at <= ?
        ORDER BY checked_at DESC
-       LIMIT ?`,
-      [targetId, start, end, cap]
+       LIMIT ${cap}`,
+      [targetId, start, end]
     ),
   ]);
   const totalInWindow = Number(countRows[0]?.c ?? 0);
@@ -205,7 +223,7 @@ export async function fetchChecksBudgetedIncidents(
   start: Date,
   end: Date
 ): Promise<{ rows: CheckIncidentSlice[]; totalInWindow: number; truncated: boolean }> {
-  const cap = checkCap();
+  const cap = safeLimitInt(checkCap());
   const [[countRows], [dataRows]] = await Promise.all([
     pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) AS c FROM checks
@@ -216,8 +234,8 @@ export async function fetchChecksBudgetedIncidents(
       `SELECT checked_at, ok, error_message, http_status FROM checks
        WHERE target_id = ? AND checked_at >= ? AND checked_at <= ?
        ORDER BY checked_at DESC
-       LIMIT ?`,
-      [targetId, start, end, cap]
+       LIMIT ${cap}`,
+      [targetId, start, end]
     ),
   ]);
   const totalInWindow = Number(countRows[0]?.c ?? 0);

@@ -18,7 +18,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: report
-              image: satheesh2023/url-monitoring:2f662
+              image: satheesh2023/url-monitoring:b124a
               imagePullPolicy: IfNotPresent
               command:
                 - sh
@@ -46,8 +46,8 @@ spec:
                       optional: true
               resources:
                 requests:
-                  cpu: 100m
-                  memory: 256Mi
+                  cpu: 50m
+                  memory: 128Mi
                 limits:
                   cpu: "500m"
-                  memory: 512Mi
+                  memory: 256Mi

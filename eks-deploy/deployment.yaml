@@ -37,7 +37,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:2f662
+          image: satheesh2023/url-monitoring:b124a
           imagePullPolicy: IfNotPresent
           # Do not run DB migrations here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.
@@ -49,9 +49,9 @@ spec:
           env:
             - name: NODE_ENV
               value: production
-            # 2Gi limit: leave headroom for TLS, mysql2 pool, buffers beyond V8 heap.
+            # Heap below 1Gi pod limit — leave RSS headroom for native, mysql2, TLS.
             - name: NODE_OPTIONS
-              value: "--max-old-space-size=1536"
+              value: "--max-old-space-size=768"
             - name: PORT
               value: "3000"
             - name: DATABASE_URL
@@ -110,8 +110,7 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 1Gi
+              memory: 512Mi
             limits:
-              cpu: "2"
-              # 1Gi still OOM’d under load (large stats windows). 2Gi matches observed ~1.5–1.9Gi peaks.
-              memory: 2Gi
+              cpu: "1"
+              memory: 1Gi
