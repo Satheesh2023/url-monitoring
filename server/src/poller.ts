@@ -24,13 +24,8 @@ type TargetRow = {
   enabled: boolean;
 };
 
-type PollerState = {
-  consecutiveFail: number;
-  consecutiveOk: number;
-  slackNotified: "UP" | "DOWN" | null;
-};
-
-const targetState = new Map<string, PollerState>();
+/** Previous `ok` from the last check in this process — used to detect UP↔DOWN transitions. */
+const previousOkByTarget = new Map<string, boolean | null>();
 const lastRunAt = new Map<string, number>();
 
 function envInt(name: string, fallback: number): number {
@@ -40,8 +35,6 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-const failuresBeforeDown = envInt("FLAP_FAILURES_BEFORE_DOWN", 3);
-const successesBeforeUp = envInt("FLAP_SUCCESSES_BEFORE_UP", 2);
 const concurrency = envInt("POLL_CONCURRENCY", 1);
 
 const queue = new PQueue({ concurrency });
@@ -105,7 +98,7 @@ async function runOneCheck(t: TargetRow): Promise<void> {
       errorMessage,
       bodySnippet,
     });
-    await maybeAlertSlack(t, ok, checkedAt, responseTimeMs, errorMessage, httpStatus);
+    await notifySlackOnStatusChange(t, ok, checkedAt, responseTimeMs, errorMessage, httpStatus);
   } catch (e) {
     console.error("[poller] persist or slack failed", t.id, t.url, e);
   }
@@ -137,7 +130,7 @@ async function readBodySnippet(res: Response): Promise<string> {
   return out;
 }
 
-async function maybeAlertSlack(
+async function notifySlackOnStatusChange(
   t: TargetRow,
   ok: boolean,
   checkedAt: Date,
@@ -145,58 +138,31 @@ async function maybeAlertSlack(
   errorMessage: string | null,
   httpStatus: number | null
 ): Promise<void> {
-  let st = targetState.get(t.id);
-  if (!st) {
-    st = { consecutiveFail: 0, consecutiveOk: 0, slackNotified: null };
-    targetState.set(t.id, st);
-  }
+  const prev = previousOkByTarget.get(t.id) ?? null;
+  previousOkByTarget.set(t.id, ok);
 
-  if (ok) {
-    st.consecutiveOk += 1;
-    st.consecutiveFail = 0;
-  } else {
-    st.consecutiveFail += 1;
-    st.consecutiveOk = 0;
+  if (prev === null) {
+    return;
+  }
+  if (prev === ok) {
+    return;
   }
 
   const display = t.name?.trim() || t.url;
+  const state = ok ? "UP" : "DOWN";
 
-  if (st.slackNotified !== "DOWN" && st.consecutiveFail >= failuresBeforeDown) {
-    try {
-      await postSlackTransition({
-        targetName: display,
-        url: t.url,
-        state: "DOWN",
-        checkedAt,
-        responseTimeMs: ok ? responseTimeMs : null,
-        errorMessage,
-        httpStatus,
-      });
-      st.slackNotified = "DOWN";
-    } catch (e) {
-      console.error("[poller] slack DOWN notify failed", t.id, e);
-    }
-  }
-
-  if (st.slackNotified === "DOWN" && st.consecutiveOk >= successesBeforeUp) {
-    try {
-      await postSlackTransition({
-        targetName: display,
-        url: t.url,
-        state: "UP",
-        checkedAt,
-        responseTimeMs,
-        errorMessage: null,
-        httpStatus,
-      });
-      st.slackNotified = "UP";
-    } catch (e) {
-      console.error("[poller] slack UP notify failed", t.id, e);
-    }
-  }
-
-  if (st.slackNotified === null && ok && st.consecutiveOk >= 1) {
-    st.slackNotified = "UP";
+  try {
+    await postSlackTransition({
+      targetName: display,
+      url: t.url,
+      state,
+      checkedAt,
+      responseTimeMs: ok ? responseTimeMs : null,
+      errorMessage: ok ? null : errorMessage,
+      httpStatus,
+    });
+  } catch (e) {
+    console.error("[poller] slack transition notify failed", t.id, state, e);
   }
 }
 

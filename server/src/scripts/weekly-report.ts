@@ -3,7 +3,7 @@ import { fetchChecksBudgetedStats } from "../check-query.js";
 import { pool } from "../db.js";
 import { listTargetsOrderByCreated } from "../repo/targets.js";
 import { computeUptimeAndIncidents, percentile, windowBounds } from "../stats.js";
-import { postSlackWeeklyReport } from "../slack.js";
+import { postSlackWeeklyReport, slackWebhookConfigured } from "../slack.js";
 import type { Target } from "../types.js";
 
 async function main() {
@@ -51,13 +51,19 @@ async function main() {
 
   lines.push("_Methodology: uptime is time-weighted between checks; lead gap excluded._");
 
-  try {
-    await postSlackWeeklyReport(lines.join("\n"));
-  } catch (e) {
-    console.error("[weekly-report] slack post failed", e);
-    process.exit(1);
-    return;
+  const report = lines.join("\n");
+  console.log(report);
+
+  if (slackWebhookConfigured()) {
+    try {
+      await postSlackWeeklyReport(report);
+    } catch (e) {
+      console.error("[weekly-report] Slack post failed", e);
+      process.exit(1);
+      return;
+    }
   }
+
   await pool.end();
 }
 

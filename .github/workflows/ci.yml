@@ -24,6 +24,8 @@ concurrency:
 env:
   IMAGE_NAME: url-monitoring
   DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+  # GitHub Actions: use Node 24 for action internals (checkout/setup-node) per deprecation timeline.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -37,7 +39,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: npm ci

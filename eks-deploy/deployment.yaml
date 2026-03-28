@@ -77,10 +77,6 @@ spec:
               value: "20000"
             - name: READ_BODY_MAX_BYTES
               value: "16384"
-            - name: FLAP_FAILURES_BEFORE_DOWN
-              value: "3"
-            - name: FLAP_SUCCESSES_BEFORE_UP
-              value: "2"
             # Short TTL cache + in-flight coalesce for GET /api/targets (many UI pollers). Set "0" to disable.
             - name: LIST_TARGETS_CACHE_MS
               value: "4000"

@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
 # Lockfile must be committed so CI/Docker match your machine.
@@ -22,7 +22,7 @@ RUN npm install --no-save \
 RUN npm run build -w web
 RUN npm run build -w server
 
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
