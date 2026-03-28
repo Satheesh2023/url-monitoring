@@ -9,18 +9,72 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  getIncidents,
-  getLatencySeries,
-  getStats,
-  listTargets,
-  type IncidentsRes,
-  type LatencySeries,
-  type Stats,
-  type Target,
-} from "../api";
+import { getDashboard, listTargets, type IncidentsRes, type LatencySeries, type Stats, type Target } from "../api";
 
 type Win = "24h" | "7d" | "30d";
+
+const LIST_CACHE_KEY = "hm-targets-list-v1";
+const detailKey = (targetId: string, window: Win) => `hm-detail-v1:${targetId}:${window}`;
+const latencyKey = (targetId: string) => `hm-detail-v1:${targetId}:latency`;
+
+function readTargetFromListCache(id: string): Target | null {
+  try {
+    const raw = sessionStorage.getItem(LIST_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return (parsed as Target[]).find((t) => t.id === id) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readDetailCache(
+  targetId: string,
+  window: Win
+): { stats: Stats | null; incidents: IncidentsRes | null; series: LatencySeries | null } {
+  let stats: Stats | null = null;
+  let incidents: IncidentsRes | null = null;
+  let series: LatencySeries | null = null;
+  try {
+    const raw = sessionStorage.getItem(detailKey(targetId, window));
+    if (raw) {
+      const o = JSON.parse(raw) as { stats?: Stats; incidents?: IncidentsRes };
+      if (o.stats) stats = o.stats;
+      if (o.incidents) incidents = o.incidents;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const rawL = sessionStorage.getItem(latencyKey(targetId));
+    if (rawL) {
+      const o = JSON.parse(rawL) as { series?: LatencySeries };
+      if (o.series) series = o.series;
+    }
+  } catch {
+    /* ignore */
+  }
+  return { stats, incidents, series };
+}
+
+function writeDetailCache(
+  targetId: string,
+  window: Win,
+  stats: Stats,
+  incidents: IncidentsRes,
+  series: LatencySeries
+): void {
+  try {
+    sessionStorage.setItem(
+      detailKey(targetId, window),
+      JSON.stringify({ stats, incidents, savedAt: Date.now() })
+    );
+    sessionStorage.setItem(latencyKey(targetId), JSON.stringify({ series, savedAt: Date.now() }));
+  } catch {
+    /* quota */
+  }
+}
 
 export default function TargetDetail() {
   const { id } = useParams();
@@ -30,33 +84,45 @@ export default function TargetDetail() {
   const [incidents, setIncidents] = useState<IncidentsRes | null>(null);
   const [series, setSeries] = useState<LatencySeries | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     if (!id) return;
+    const fromList = readTargetFromListCache(id);
+    if (fromList) setTarget(fromList);
     void listTargets()
       .then((r) => setTarget(r.targets.find((t) => t.id === id) ?? null))
-      .catch(() => setTarget(null));
+      .catch(() => {
+        /* keep list cache target if any */
+      });
   }, [id]);
 
   useEffect(() => {
     if (!id) return;
     const targetId = id;
+    setStale(false);
+    const cached = readDetailCache(targetId, timeWindow);
+    if (cached.stats) setStats(cached.stats);
+    if (cached.incidents) setIncidents(cached.incidents);
+    if (cached.series) setSeries(cached.series);
+
     let cancelled = false;
     async function load() {
       setErr(null);
       try {
-        const [s, i, l] = await Promise.all([
-          getStats(targetId, timeWindow),
-          getIncidents(targetId, timeWindow),
-          getLatencySeries(targetId),
-        ]);
+        const d = await getDashboard(targetId, timeWindow);
         if (!cancelled) {
-          setStats(s);
-          setIncidents(i);
-          setSeries(l);
+          setStats(d.stats);
+          setIncidents(d.incidents);
+          setSeries(d.latencySeries);
+          writeDetailCache(targetId, timeWindow, d.stats, d.incidents, d.latencySeries);
+          setStale(false);
         }
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Load failed");
+        if (!cancelled) {
+          setErr(e instanceof Error ? e.message : "Load failed");
+          setStale(true);
+        }
       }
     }
     void load();
@@ -76,6 +142,9 @@ export default function TargetDetail() {
       n: p.n,
     })) ?? [];
 
+  const showStale =
+    stale && (stats != null || incidents != null || series != null);
+
   return (
     <div className="space-y-8">
       <div>
@@ -87,6 +156,16 @@ export default function TargetDetail() {
         </h1>
         {target && <p className="mt-1 truncate text-sm text-zinc-500">{target.url}</p>}
       </div>
+
+      {showStale && (
+        <div className="rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+          <p className="font-medium text-amber-50">Showing last loaded report data</p>
+          <p className="mt-1 text-amber-100/90">
+            Refresh failed (database slow or unavailable). Charts and incidents below are from your
+            browser cache or the last successful load. Retrying every 30s.
+          </p>
+        </div>
+      )}
 
       {err && (
         <div className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-200">

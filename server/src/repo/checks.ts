@@ -156,6 +156,50 @@ export async function fetchChecksBudgetedStats(
   return { rows, totalInWindow, truncated };
 }
 
+/** One COUNT + one SELECT for stats, incidents, and latency (same window). */
+export type DashboardCheckRow = {
+  checkedAt: Date;
+  ok: boolean;
+  responseTimeMs: number | null;
+  errorMessage: string | null;
+  httpStatus: number | null;
+};
+
+export async function fetchChecksBudgetedDashboard(
+  targetId: string,
+  start: Date,
+  end: Date
+): Promise<{ rows: DashboardCheckRow[]; totalInWindow: number; truncated: boolean }> {
+  const cap = checkCap();
+  const [[countRows], [dataRows]] = await Promise.all([
+    pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS c FROM checks
+       WHERE target_id = ? AND checked_at >= ? AND checked_at <= ?`,
+      [targetId, start, end]
+    ),
+    pool.execute<RowDataPacket[]>(
+      `SELECT checked_at, ok, response_time_ms, error_message, http_status FROM checks
+       WHERE target_id = ? AND checked_at >= ? AND checked_at <= ?
+       ORDER BY checked_at DESC
+       LIMIT ?`,
+      [targetId, start, end, cap]
+    ),
+  ]);
+  const totalInWindow = Number(countRows[0]?.c ?? 0);
+  const truncated = totalInWindow > cap;
+  const rowsDesc = dataRows as RowDataPacket[];
+  const rowsAsc: DashboardCheckRow[] = rowsDesc
+    .map((r) => ({
+      checkedAt: r.checked_at,
+      ok: Boolean(r.ok),
+      responseTimeMs: r.response_time_ms != null ? Number(r.response_time_ms) : null,
+      errorMessage: r.error_message,
+      httpStatus: r.http_status != null ? Number(r.http_status) : null,
+    }))
+    .reverse();
+  return { rows: rowsAsc, totalInWindow, truncated };
+}
+
 export async function fetchChecksBudgetedIncidents(
   targetId: string,
   start: Date,

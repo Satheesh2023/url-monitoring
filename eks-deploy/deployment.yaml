@@ -37,7 +37,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: app
-          image: satheesh2023/url-monitoring:04b76
+          image: satheesh2023/url-monitoring:2f662
           imagePullPolicy: IfNotPresent
           # Do not run DB migrations here: 2 replicas would race and one pod can exit 1 → CrashLoop.
           # Apply eks-deploy/job-db-migrate.yaml once per release (or after schema changes) before rollout.

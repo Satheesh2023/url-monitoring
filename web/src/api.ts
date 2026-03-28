@@ -4,6 +4,8 @@ const base = "";
 const FETCH_TIMEOUT_MS = 25_000;
 /** `/api/targets` can be slower (DB); keep above default so list view does not false-timeout. */
 const LIST_TARGETS_TIMEOUT_MS = 60_000;
+/** Stats / incidents / latency run heavy queries (COUNT + bounded reads). */
+const DETAIL_STATS_TIMEOUT_MS = 90_000;
 
 function mergeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
   if (!b) return a;
@@ -39,7 +41,15 @@ function formatHttpError(status: number, body: string): string {
   ) {
     return `Gateway error (${status}): load balancer had no healthy backend (often brief). Retried automatically.`;
   }
-  if (b.length > 0 && b.length < 500 && !b.includes("<")) return b;
+  if (b.length > 0 && b.length < 500 && !b.includes("<")) {
+    try {
+      const parsed = JSON.parse(b) as { error?: string };
+      if (typeof parsed.error === "string") return parsed.error;
+    } catch {
+      /* not JSON */
+    }
+    return b;
+  }
   return `Request failed (${status})`;
 }
 
@@ -167,7 +177,9 @@ export type Stats = {
 };
 
 export function getStats(id: string, window: "24h" | "7d" | "30d") {
-  return j<Stats>(`/api/targets/${id}/stats?window=${window}`);
+  return j<Stats>(`/api/targets/${id}/stats?window=${window}`, {
+    timeoutMs: DETAIL_STATS_TIMEOUT_MS,
+  });
 }
 
 export type IncidentsRes = {
@@ -177,7 +189,9 @@ export type IncidentsRes = {
 };
 
 export function getIncidents(id: string, window: "24h" | "7d" | "30d") {
-  return j<IncidentsRes>(`/api/targets/${id}/incidents?window=${window}`);
+  return j<IncidentsRes>(`/api/targets/${id}/incidents?window=${window}`, {
+    timeoutMs: DETAIL_STATS_TIMEOUT_MS,
+  });
 }
 
 export type LatencySeries = {
@@ -186,5 +200,26 @@ export type LatencySeries = {
 };
 
 export function getLatencySeries(id: string) {
-  return j<LatencySeries>(`/api/targets/${id}/latency-series`);
+  return j<LatencySeries>(`/api/targets/${id}/latency-series`, {
+    timeoutMs: DETAIL_STATS_TIMEOUT_MS,
+  });
+}
+
+export type DashboardRes = {
+  stats: Stats & {
+    windowStart?: string;
+    windowEnd?: string;
+    coveredMs?: number;
+    downtimeMs?: number;
+    checksLoaded?: number;
+  };
+  incidents: IncidentsRes;
+  latencySeries: LatencySeries;
+};
+
+/** One round-trip: stats + incidents + 24h latency chart (server uses one DB pass for 24h window). */
+export function getDashboard(id: string, window: "24h" | "7d" | "30d") {
+  return j<DashboardRes>(`/api/targets/${id}/dashboard?window=${window}`, {
+    timeoutMs: DETAIL_STATS_TIMEOUT_MS,
+  });
 }

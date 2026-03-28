@@ -1,7 +1,11 @@
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 import { isDbDriverError } from "../db-errors.js";
-import { fetchChecksBudgetedIncidents, fetchChecksBudgetedStats } from "../check-query.js";
+import {
+  fetchChecksBudgetedDashboard,
+  fetchChecksBudgetedIncidents,
+  fetchChecksBudgetedStats,
+} from "../check-query.js";
 import {
   countChecksForTarget,
   findLatestCheckPerTarget,
@@ -15,6 +19,7 @@ import {
   targetExists,
   updateTarget,
 } from "../repo/targets.js";
+import type { DashboardCheckRow } from "../repo/checks.js";
 import type { LatestCheckRow, Target } from "../types.js";
 import {
   buildIncidentList,
@@ -22,6 +27,8 @@ import {
   downsampleLatencySeries,
   percentile,
   windowBounds,
+  type CheckStatsSlice,
+  type CheckIncidentSlice,
   type WindowKey,
 } from "../stats.js";
 
@@ -78,6 +85,79 @@ function parseWindow(q: unknown): WindowKey {
   const v = Array.isArray(q) ? q[0] : q;
   if (v === "24h" || v === "7d" || v === "30d") return v;
   return "24h";
+}
+
+function slicesFromDashboardRows(rows: DashboardCheckRow[]): {
+  stats: CheckStatsSlice[];
+  incidents: CheckIncidentSlice[];
+} {
+  const stats: CheckStatsSlice[] = [];
+  const incidents: CheckIncidentSlice[] = [];
+  for (const r of rows) {
+    stats.push({
+      checkedAt: r.checkedAt,
+      ok: r.ok,
+      responseTimeMs: r.responseTimeMs,
+    });
+    incidents.push({
+      checkedAt: r.checkedAt,
+      ok: r.ok,
+      errorMessage: r.errorMessage,
+      httpStatus: r.httpStatus,
+    });
+  }
+  return { stats, incidents };
+}
+
+function jsonStatsForWindow(
+  window: WindowKey,
+  start: Date,
+  end: Date,
+  checks: CheckStatsSlice[],
+  totalInWindow: number,
+  truncated: boolean
+) {
+  const u = computeUptimeAndIncidents(checks, start, end);
+  const sortedLat = [...u.latenciesMs].sort((a, b) => a - b);
+  let methodology =
+    "Uptime uses time between consecutive checks in-window; period before the first check is excluded (no data). After the last check, state is extended to window end.";
+  if (truncated) {
+    methodology +=
+      " When a window has more checks than STATS_CHECK_CAP, only the newest rows are loaded (approximation).";
+  }
+  return {
+    window,
+    windowStart: start.toISOString(),
+    windowEnd: end.toISOString(),
+    uptimePercent: u.uptimePercent,
+    coveredMs: u.coveredMs,
+    downtimeMs: u.downtimeMs,
+    incidentCount: u.incidentCount,
+    longestOutageMs: u.longestOutageMs,
+    p50Ms: percentile(sortedLat, 50),
+    p95Ms: percentile(sortedLat, 95),
+    checkCount: totalInWindow,
+    checksLoaded: checks.length,
+    checksTruncated: truncated,
+    methodology,
+  };
+}
+
+function jsonLatencySeries(
+  checks: CheckStatsSlice[],
+  start: Date,
+  end: Date,
+  truncated: boolean
+) {
+  const bucketMs = 60_000;
+  const series = downsampleLatencySeries(checks, start, end, bucketMs);
+  return {
+    windowStart: start.toISOString(),
+    windowEnd: end.toISOString(),
+    bucketMinutes: bucketMs / 60_000,
+    series,
+    checksTruncated: truncated,
+  };
 }
 
 type TargetsListResponse = {
@@ -236,32 +316,7 @@ export function registerApi(app: Express): void {
       end
     );
 
-    const u = computeUptimeAndIncidents(checks, start, end);
-    const sortedLat = [...u.latenciesMs].sort((a, b) => a - b);
-
-    let methodology =
-      "Uptime uses time between consecutive checks in-window; period before the first check is excluded (no data). After the last check, state is extended to window end.";
-    if (truncated) {
-      methodology +=
-        " When a window has more checks than STATS_CHECK_CAP, only the newest rows are loaded (approximation).";
-    }
-
-    res.json({
-      window,
-      windowStart: start.toISOString(),
-      windowEnd: end.toISOString(),
-      uptimePercent: u.uptimePercent,
-      coveredMs: u.coveredMs,
-      downtimeMs: u.downtimeMs,
-      incidentCount: u.incidentCount,
-      longestOutageMs: u.longestOutageMs,
-      p50Ms: percentile(sortedLat, 50),
-      p95Ms: percentile(sortedLat, 95),
-      checkCount: totalInWindow,
-      checksLoaded: checks.length,
-      checksTruncated: truncated,
-      methodology,
-    });
+    res.json(jsonStatsForWindow(window, start, end, checks, totalInWindow, truncated));
   }));
 
   app.get("/api/targets/:id/incidents", asyncRoute(async (req, res) => {
@@ -290,14 +345,62 @@ export function registerApi(app: Express): void {
     }
     const { start, end } = windowBounds("24h");
     const { rows: checks, truncated } = await fetchChecksBudgetedStats(targetId, start, end);
-    const bucketMs = 60_000;
-    const series = downsampleLatencySeries(checks, start, end, bucketMs);
+    res.json(jsonLatencySeries(checks, start, end, truncated));
+  }));
+
+  app.get("/api/targets/:id/dashboard", asyncRoute(async (req, res) => {
+    const targetId = paramId(req);
+    const exists = await findTargetById(targetId);
+    if (!exists) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+
+    const window = parseWindow(req.query.window);
+    const { start, end } = windowBounds(window);
+    const { start: s24, end: e24 } = windowBounds("24h");
+
+    if (window === "24h") {
+      const { rows, totalInWindow, truncated } = await fetchChecksBudgetedDashboard(
+        targetId,
+        start,
+        end
+      );
+      const { stats: statsSlices, incidents: incidentSlices } = slicesFromDashboardRows(rows);
+      res.json({
+        stats: jsonStatsForWindow(window, start, end, statsSlices, totalInWindow, truncated),
+        incidents: {
+          window,
+          items: buildIncidentList(incidentSlices, start, end),
+          checksTruncated: truncated,
+        },
+        latencySeries: jsonLatencySeries(statsSlices, start, end, truncated),
+      });
+      return;
+    }
+
+    const [main, lat24] = await Promise.all([
+      fetchChecksBudgetedDashboard(targetId, start, end),
+      fetchChecksBudgetedDashboard(targetId, s24, e24),
+    ]);
+    const { stats: statsSlices, incidents: incidentSlices } = slicesFromDashboardRows(main.rows);
+    const stats24 = slicesFromDashboardRows(lat24.rows).stats;
+
     res.json({
-      windowStart: start.toISOString(),
-      windowEnd: end.toISOString(),
-      bucketMinutes: bucketMs / 60_000,
-      series,
-      checksTruncated: truncated,
+      stats: jsonStatsForWindow(
+        window,
+        start,
+        end,
+        statsSlices,
+        main.totalInWindow,
+        main.truncated
+      ),
+      incidents: {
+        window,
+        items: buildIncidentList(incidentSlices, start, end),
+        checksTruncated: main.truncated,
+      },
+      latencySeries: jsonLatencySeries(stats24, s24, e24, lat24.truncated),
     });
   }));
 

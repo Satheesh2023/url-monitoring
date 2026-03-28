@@ -231,7 +231,13 @@ export default function TargetList() {
                       >
                         {t.name || t.url}
                       </Link>
-                      <div className="truncate text-xs text-zinc-500">{t.url}</div>
+                      <Link
+                        to={`/targets/${t.id}`}
+                        className="mt-0.5 block truncate text-xs text-zinc-500 hover:text-emerald-400/90"
+                        title="Open uptime report"
+                      >
+                        {t.url}
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-zinc-400">{formatTime(t.latest?.checkedAt)}</td>
                     <td className="px-4 py-3 text-zinc-300">
