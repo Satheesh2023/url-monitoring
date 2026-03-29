@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createTarget, deleteTarget, listTargets, type Target } from "../api";
 
@@ -42,6 +42,20 @@ export default function TargetList() {
   const [partialLatest, setPartialLatest] = useState(false);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "up" | "down">("all");
+
+  const filteredTargets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return targets.filter((t) => {
+      if (statusFilter === "up" && t.latest?.ok !== true) return false;
+      if (statusFilter === "down" && t.latest?.ok !== false) return false;
+      if (!q) return true;
+      const inUrl = t.url.toLowerCase().includes(q);
+      const inName = (t.name ?? "").toLowerCase().includes(q);
+      return inUrl || inName;
+    });
+  }, [targets, search, statusFilter]);
 
   async function refresh() {
     try {
@@ -95,6 +109,48 @@ export default function TargetList() {
         <p className="mt-1 text-sm text-zinc-400">
           Live status refreshes every 20s. Open a row for history, uptime, and latency.
         </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/60 p-1 text-sm">
+            {(
+              [
+                { id: "all" as const, label: "All" },
+                { id: "up" as const, label: "Up" },
+                { id: "down" as const, label: "Down" },
+              ] satisfies { id: "all" | "up" | "down"; label: string }[]
+            ).map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setStatusFilter(id)}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === id
+                    ? id === "up"
+                      ? "bg-emerald-600 text-white"
+                      : id === "down"
+                        ? "bg-red-600 text-white"
+                        : "bg-zinc-700 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="min-w-[200px] flex-1 sm:max-w-md">
+            <label htmlFor="target-search" className="sr-only">
+              Search by URL or name
+            </label>
+            <input
+              id="target-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search URL or name…"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 outline-none ring-emerald-500/40 placeholder:text-zinc-600 focus:ring-2"
+              autoComplete="off"
+            />
+          </div>
+        </div>
       </div>
 
       <form
@@ -180,7 +236,7 @@ export default function TargetList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800 bg-zinc-950/40">
-              {targets.map((t) => {
+              {filteredTargets.map((t) => {
                 const ok = t.latest?.ok;
                 const baseBadge =
                   ok === undefined
@@ -265,6 +321,11 @@ export default function TargetList() {
           </table>
           {targets.length === 0 && (
             <p className="px-4 py-8 text-center text-zinc-500">No targets yet.</p>
+          )}
+          {targets.length > 0 && filteredTargets.length === 0 && (
+            <p className="px-4 py-8 text-center text-zinc-500">
+              No targets match your search or status filter.
+            </p>
           )}
         </div>
       )}
