@@ -14,4 +14,4 @@ resources:
 images:
   - name: satheesh2023/url-monitoring
     newName: satheesh2023/url-monitoring
-    newTag: "12838"
+    newTag: "e07ac"
