@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS `targets` (
     `id` VARCHAR(191) NOT NULL,
     `url` VARCHAR(2048) NOT NULL,
     `name` VARCHAR(255) NULL,
-    `poll_interval_sec` INTEGER NOT NULL DEFAULT 5,
+    `poll_interval_sec` INTEGER NOT NULL DEFAULT 60,
     `timeout_ms` INTEGER NOT NULL DEFAULT 10000,
     `max_redirects` INTEGER NOT NULL DEFAULT 5,
     `status_min` INTEGER NOT NULL DEFAULT 200,

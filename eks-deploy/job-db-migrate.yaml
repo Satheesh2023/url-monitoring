@@ -23,7 +23,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migrate
-          image: satheesh2023/url-monitoring:1e358
+          image: satheesh2023/url-monitoring:e4dcc
           imagePullPolicy: IfNotPresent
           workingDir: /app/server
           command: ["node", "dist/scripts/migrate.js"]

@@ -72,7 +72,7 @@ export async function createTarget(data: TargetCreateInput): Promise<Target> {
       id,
       data.url,
       data.name ?? null,
-      data.pollIntervalSec ?? 5,
+      data.pollIntervalSec ?? 60,
       data.timeoutMs ?? 10_000,
       data.maxRedirects ?? 5,
       data.statusMin ?? 200,
