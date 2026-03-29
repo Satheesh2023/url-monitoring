@@ -109,15 +109,15 @@ export default function TargetList() {
         <p className="mt-1 text-sm text-zinc-400">
           Live status refreshes every 20s. Open a row for history, uptime, and latency.
         </p>
-        <div className="mt-6 flex justify-center">
+        <div className="mt-2 flex justify-center sm:justify-end">
           <img
             src="/tricog-brand.png"
             alt="Tricog"
-            className="h-auto w-full max-w-[min(100%,520px)] object-contain sm:max-w-[640px]"
+            className="block h-8 w-auto max-w-[min(100%,160px)] object-contain sm:h-9 sm:max-w-[176px]"
             decoding="async"
           />
         </div>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/60 p-1 text-sm">
             {(
               [
